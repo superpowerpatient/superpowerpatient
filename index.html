@@ -521,6 +521,329 @@
       );
     }
 
+    // ========== 공통: 상세 보기 모달 ==========
+    function DetailModal({ open, onClose, children }) {
+      if (!open) return null;
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+          style={{ touchAction: 'none' }}
+          onClick={onClose}
+        >
+          <div
+            className="bg-white w-full max-w-[480px] rounded-t-2xl sm:rounded-2xl p-5 max-h-[85vh] overflow-y-auto scroll-area"
+            style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={onClose}
+                aria-label="닫기"
+                className="text-textsub no-select text-xl px-2"
+                style={{ minHeight: 36, minWidth: 36 }}
+              >
+                ✕
+              </button>
+            </div>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    // ========== 탭 4: 마음 일기 ==========
+    const GALLERY_GRADIENTS = [
+      'from-pink-200 to-rose-100',
+      'from-purple-200 to-indigo-100',
+      'from-yellow-200 to-orange-100',
+      'from-green-200 to-teal-100',
+      'from-blue-200 to-cyan-100',
+      'from-red-200 to-pink-100',
+      'from-indigo-200 to-purple-100',
+      'from-teal-200 to-green-100',
+      'from-orange-200 to-yellow-100',
+      'from-cyan-200 to-blue-100',
+    ];
+
+    function DiaryTab() {
+      const [diaryList, setDiaryList] = useState(() => loadData(STORAGE_KEYS.diary, []));
+      const [cheeringList] = useState(() => loadData(STORAGE_KEYS.cheering, []));
+
+      const [draftDate, setDraftDate] = useState(todayKey());
+      const [draftMood, setDraftMood] = useState(null);
+      const [draftBody, setDraftBody] = useState('');
+      const [draftGrateful, setDraftGrateful] = useState(['', '', '']);
+      const [draftHard, setDraftHard] = useState('');
+
+      const [viewDiary, setViewDiary] = useState(null);
+      const [viewCheering, setViewCheering] = useState(null);
+      const [deleteId, setDeleteId] = useState(null);
+
+      // 일기 자동 저장
+      useEffect(() => {
+        saveData(STORAGE_KEYS.diary, diaryList);
+      }, [diaryList]);
+
+      // 선택 날짜의 기분을 igt_mood에서 pre-fill (홈 탭과 연동)
+      useEffect(() => {
+        const moods = loadData(STORAGE_KEYS.mood, []);
+        const m = moods.find(x => x.date === draftDate);
+        setDraftMood(m ? m.value : null);
+      }, [draftDate]);
+
+      function handleSelectMood(value) {
+        setDraftMood(value);
+        // 같은 날짜의 mood를 igt_mood에 write-back (홈과 연동)
+        const mObj = MOODS.find(x => x.value === value);
+        if (!mObj) return;
+        const moods = loadData(STORAGE_KEYS.mood, []);
+        const without = moods.filter(x => x.date !== draftDate);
+        saveData(STORAGE_KEYS.mood, [
+          { date: draftDate, emoji: mObj.emoji, value: mObj.value },
+          ...without,
+        ]);
+      }
+
+      function handleSave() {
+        const body = draftBody.trim();
+        if (!body) return;
+        const moodObj = MOODS.find(m => m.value === draftMood);
+        const entry = {
+          id: generateId(),
+          date: draftDate,
+          mood: moodObj ? moodObj.emoji : null,
+          body,
+          grateful: draftGrateful.map(g => g.trim()).filter(Boolean),
+          hard: draftHard.trim(),
+        };
+        setDiaryList(prev => [entry, ...prev]);
+        setDraftBody('');
+        setDraftGrateful(['', '', '']);
+        setDraftHard('');
+      }
+
+      function handleDelete() {
+        setDiaryList(prev => prev.filter(d => d.id !== deleteId));
+        setDeleteId(null);
+      }
+
+      const sortedDiaries = useMemo(
+        () => [...diaryList].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+        [diaryList]
+      );
+      const sortedCheerings = useMemo(
+        () => [...cheeringList].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+        [cheeringList]
+      );
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          {/* 4-1. 일기 작성 */}
+          <Card title="📖 마음 일기 쓰기">
+            <label className="block text-xs text-textsub mb-1">날짜</label>
+            <input
+              type="date"
+              value={draftDate}
+              onChange={(e) => setDraftDate(e.target.value)}
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-4 text-textmain"
+            />
+
+            <label className="block text-xs text-textsub mb-2">오늘의 기분</label>
+            <div className="flex justify-between mb-4">
+              {MOODS.map((m) => {
+                const active = draftMood === m.value;
+                return (
+                  <button
+                    key={m.value}
+                    onClick={() => handleSelectMood(m.value)}
+                    aria-label={m.label}
+                    className={`mood-btn no-select flex items-center justify-center rounded-2xl
+                                ${active ? 'selected bg-primary/10 ring-2 ring-primary' : 'bg-softbg'}`}
+                    style={{ width: 54, height: 54 }}
+                  >
+                    <span className="text-2xl leading-none">{m.emoji}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="block text-xs text-textsub mb-1">오늘의 이야기</label>
+            <textarea
+              value={draftBody}
+              onChange={(e) => setDraftBody(e.target.value)}
+              rows={8}
+              placeholder="오늘 있었던 일, 느낀 점을 자유롭게 적어봐요."
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-4 resize-none text-textmain placeholder:text-textsub/70"
+            />
+
+            <label className="block text-xs text-textsub mb-1">감사한 일 3가지 (선택)</label>
+            <div className="space-y-2 mb-4">
+              {[0, 1, 2].map((i) => (
+                <input
+                  key={i}
+                  type="text"
+                  value={draftGrateful[i]}
+                  onChange={(e) => {
+                    const next = [...draftGrateful];
+                    next[i] = e.target.value;
+                    setDraftGrateful(next);
+                  }}
+                  placeholder={`감사 ${i + 1}`}
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70"
+                />
+              ))}
+            </div>
+
+            <label className="block text-xs text-textsub mb-1">힘들었던 점 (선택)</label>
+            <textarea
+              value={draftHard}
+              onChange={(e) => setDraftHard(e.target.value)}
+              rows={3}
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-4 resize-none text-textmain"
+            />
+
+            <div className="flex justify-end">
+              <PrimaryButton onClick={handleSave} disabled={!draftBody.trim()}>
+                일기 저장
+              </PrimaryButton>
+            </div>
+          </Card>
+
+          {/* 4-2. 화이팅 갤러리 */}
+          <Card title="💪 화이팅 갤러리">
+            {sortedCheerings.length === 0 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                홈 탭에서 저장한 화이팅 메시지가 여기에 모여요.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {sortedCheerings.map((c, i) => (
+                  <button
+                    key={c.id || c.date}
+                    onClick={() => setViewCheering(c)}
+                    className={`no-select text-left p-3 rounded-2xl shadow-sm bg-gradient-to-br ${GALLERY_GRADIENTS[i % 10]} active:opacity-80`}
+                    style={{ minHeight: 110 }}
+                  >
+                    <div className="text-[11px] text-textsub mb-1">
+                      {c.date}{c.mood ? ` · ${c.mood}` : ''}
+                    </div>
+                    <div className="text-sm font-medium text-textmain leading-snug"
+                         style={{
+                           display: '-webkit-box',
+                           WebkitLineClamp: 4,
+                           WebkitBoxOrient: 'vertical',
+                           overflow: 'hidden',
+                         }}>
+                      {c.text}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* 4-3. 일기 목록 */}
+          <Card title="📔 일기 목록">
+            {sortedDiaries.length === 0 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                아직 저장된 일기가 없어요.
+              </div>
+            ) : (
+              <ul className="divide-y divide-primary/10">
+                {sortedDiaries.map((d) => (
+                  <li key={d.id} className="py-3 flex items-start gap-2">
+                    <button
+                      onClick={() => setViewDiary(d)}
+                      className="flex-1 text-left no-select py-1"
+                    >
+                      <div className="text-xs text-textsub mb-0.5">
+                        {d.date}{d.mood ? ` · ${d.mood}` : ''}
+                      </div>
+                      <div className="text-sm text-textmain leading-snug"
+                           style={{
+                             display: '-webkit-box',
+                             WebkitLineClamp: 2,
+                             WebkitBoxOrient: 'vertical',
+                             overflow: 'hidden',
+                           }}>
+                        {d.body}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setDeleteId(d.id)}
+                      aria-label="삭제"
+                      className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full"
+                      style={{ minHeight: 40, minWidth: 40 }}
+                    >
+                      🗑️
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* 화이팅 상세 모달 */}
+          <DetailModal open={!!viewCheering} onClose={() => setViewCheering(null)}>
+            {viewCheering && (
+              <>
+                <div className="text-xs text-textsub mb-2">
+                  {formatKoreanDate(viewCheering.date)}{viewCheering.mood ? ` · ${viewCheering.mood}` : ''}
+                </div>
+                <div
+                  className="text-base leading-relaxed whitespace-pre-wrap text-textmain"
+                  style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                >
+                  {viewCheering.text}
+                </div>
+              </>
+            )}
+          </DetailModal>
+
+          {/* 일기 상세 모달 */}
+          <DetailModal open={!!viewDiary} onClose={() => setViewDiary(null)}>
+            {viewDiary && (
+              <>
+                <div className="text-xs text-textsub mb-2">
+                  {formatKoreanDate(viewDiary.date)}{viewDiary.mood ? ` · ${viewDiary.mood}` : ''}
+                </div>
+                <div
+                  className="text-base leading-relaxed whitespace-pre-wrap text-textmain mb-4"
+                  style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                >
+                  {viewDiary.body}
+                </div>
+                {viewDiary.grateful && viewDiary.grateful.length > 0 && (
+                  <div className="mb-4">
+                    <div className="text-sm font-semibold text-primary mb-1">🙏 감사한 일</div>
+                    <ul className="list-disc list-inside text-sm text-textmain space-y-1">
+                      {viewDiary.grateful.map((g, i) => (
+                        <li key={i}>{g}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {viewDiary.hard && (
+                  <div>
+                    <div className="text-sm font-semibold text-secondary mb-1">💙 힘들었던 점</div>
+                    <div className="text-sm text-textmain whitespace-pre-wrap">{viewDiary.hard}</div>
+                  </div>
+                )}
+              </>
+            )}
+          </DetailModal>
+
+          <ConfirmDialog
+            open={!!deleteId}
+            title="일기를 삭제할까요?"
+            message="삭제한 일기는 복구할 수 없어요."
+            onConfirm={handleDelete}
+            onCancel={() => setDeleteId(null)}
+          />
+        </div>
+      );
+    }
+
     // ========== 탭 placeholder ==========
     function Placeholder({ label }) {
       return (
@@ -564,7 +887,7 @@
               {tab === 'home'      && <HomeTab onNavigate={setTab} />}
               {tab === 'treatment' && <Placeholder label="치료 관리" />}
               {tab === 'body'      && <Placeholder label="몸 상태" />}
-              {tab === 'diary'     && <Placeholder label="마음 일기" />}
+              {tab === 'diary'     && <DiaryTab />}
               {tab === 'expense'   && <Placeholder label="병원비 관리" />}
             </main>
             <TabBar current={tab} onChange={setTab} />

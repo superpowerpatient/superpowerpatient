@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="이겨내자 오늘도" />
+  <meta name="theme-color" content="#E91E8C" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no, email=no, address=no" />
+
+  <title>이겨내자 오늘도 🎗️</title>
+
+  <!-- CDN 로딩 순서: React → ReactDOM → prop-types → Recharts → Babel → Tailwind -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    // Tailwind 커스텀 테마
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#E91E8C',
+            secondary: '#6C63FF',
+            softbg: '#FFF8FC',
+            textmain: '#2D1B3D',
+            textsub: '#6B7280',
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'Apple SD Gothic Neo',
+                   'Noto Sans KR', 'Pretendard', 'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+          boxShadow: {
+            card: '0 4px 20px rgba(233, 30, 140, 0.08)',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    /* iOS Safari: 탭 파란 하이라이트 제거 */
+    * { -webkit-tap-highlight-color: transparent; }
+
+    /* 바운스 스크롤/가로 스크롤 차단 */
+    html, body {
+      overscroll-behavior-y: contain;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      background-color: #FFF8FC;
+      color: #2D1B3D;
+    }
+
+    /* iOS 자동 확대 방지: input/textarea/select는 최소 16px */
+    input, textarea, select { font-size: 16px !important; }
+
+    /* 터치 지연(300ms) 제거 */
+    button, a, [role="button"] { touch-action: manipulation; }
+
+    /* 노치/홈 인디케이터 대응 */
+    .safe-top { padding-top: env(safe-area-inset-top); }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+    /* 하단 탭바: 홈 인디케이터 위에 뜨도록 */
+    .tab-bar {
+      padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+    }
+
+    /* 내부 스크롤 영역 iOS 관성 */
+    .scroll-area {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    /* 버튼/탭 텍스트 선택 방지 */
+    .no-select {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    button:focus, input:focus, textarea:focus, select:focus { outline: none; }
+
+    /* 선택된 기분 버튼 살짝 확대 */
+    .mood-btn { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .mood-btn.selected { transform: scale(1.1); }
+
+    /* 형광펜 느낌 화이팅 카드 */
+    .highlighter {
+      background: linear-gradient(180deg, transparent 55%, #FFF59D 55%);
+    }
+  </style>
+</head>
+
+<body class="bg-softbg font-sans">
+  <div id="root">
+    <div style="display:flex;justify-content:center;align-items:center;height:100vh;color:#E91E8C;font-family:-apple-system,sans-serif;">
+      이겨내자 오늘도 🎗️ 로딩 중…
+    </div>
+  </div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+    const {
+      LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+      XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+    } = Recharts;
+
+    // ========== localStorage 키 ==========
+    const STORAGE_KEYS = {
+      cheering:    'igt_cheering',
+      mood:        'igt_mood',
+      treatment:   'igt_treatment',
+      sideEffects: 'igt_sideeffects',
+      medications: 'igt_medications',
+      vitals:      'igt_vitals',
+      meals:       'igt_meals',
+      diary:       'igt_diary',
+      expenses:    'igt_expenses',
+      insurance:   'igt_insurance',
+      profile:     'igt_profile',
+    };
+
+    // ========== 공통 유틸 ==========
+    function loadData(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw === null || raw === undefined) return fallback;
+        return JSON.parse(raw);
+      } catch (e) {
+        console.warn('loadData 실패:', key, e);
+        return fallback;
+      }
+    }
+
+    function saveData(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (e) {
+        console.warn('saveData 실패:', key, e);
+      }
+    }
+
+    function generateId() {
+      return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+    }
+
+    // 로컬 타임존 기준 YYYY-MM-DD
+    function todayKey(d) {
+      const dt = d ? new Date(d) : new Date();
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const day = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+    function formatKoreanDate(dateStr) {
+      const dt = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+      return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${WEEKDAYS[dt.getDay()]})`;
+    }
+
+    // ========== 기분 이모지 ==========
+    const MOODS = [
+      { value: 'great', emoji: '😄', label: '아주 좋음' },
+      { value: 'good',  emoji: '😊', label: '좋음' },
+      { value: 'soso',  emoji: '😐', label: '그저 그럼' },
+      { value: 'down',  emoji: '😔', label: '힘듦' },
+      { value: 'bad',   emoji: '😢', label: '매우 힘듦' },
+    ];
+
+    // ========== 탭 정의 ==========
+    const TABS = [
+      { key: 'home',      icon: '📋', label: '오늘' },
+      { key: 'treatment', icon: '💊', label: '치료' },
+      { key: 'body',      icon: '🏥', label: '몸상태' },
+      { key: 'diary',     icon: '📖', label: '일기' },
+      { key: 'expense',   icon: '💰', label: '병원비' },
+    ];
+
+    // ========== 공통 UI ==========
+    function Header({ title }) {
+      const today = formatKoreanDate();
+      return (
+        <header className="safe-top sticky top-0 z-20 bg-softbg/95 backdrop-blur">
+          <div className="px-5 pt-3 pb-3 flex items-end justify-between">
+            <div>
+              <div className="text-lg font-bold text-primary leading-tight">
+                이겨내자 오늘도 🎗️
+              </div>
+              <div className="text-xs text-textsub mt-0.5">{today}</div>
+            </div>
+            <div className="text-sm font-semibold text-textmain">{title}</div>
+          </div>
+          <div className="h-px bg-primary/10" />
+        </header>
+      );
+    }
+
+    function TabBar({ current, onChange }) {
+      return (
+        <nav className="tab-bar fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px]
+                        bg-white/95 backdrop-blur border-t border-primary/10 z-30 no-select">
+          <ul className="flex">
+            {TABS.map(t => {
+              const active = current === t.key;
+              return (
+                <li key={t.key} className="flex-1">
+                  <button
+                    onClick={() => onChange(t.key)}
+                    className={`w-full flex flex-col items-center justify-center py-2
+                                ${active ? 'text-primary' : 'text-textsub'}`}
+                    style={{ minHeight: '56px' }}
+                    aria-label={t.label}
+                  >
+                    <span className="text-2xl leading-none">{t.icon}</span>
+                    <span className={`text-[11px] mt-1 ${active ? 'font-bold' : ''}`}>
+                      {t.label}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      );
+    }
+
+    function Card({ title, children, className = '' }) {
+      return (
+        <section className={`bg-white rounded-2xl shadow-card p-4 ${className}`}>
+          {title && (
+            <h2 className="text-base font-bold text-textmain mb-3">{title}</h2>
+          )}
+          {children}
+        </section>
+      );
+    }
+
+    function PrimaryButton({ children, onClick, disabled, type = 'button', className = '' }) {
+      return (
+        <button
+          type={type}
+          onClick={onClick}
+          disabled={disabled}
+          className={`rounded-full bg-primary text-white font-semibold px-5 py-3 no-select
+                      active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed
+                      ${className}`}
+          style={{ minHeight: '44px' }}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function GhostButton({ children, onClick, className = '' }) {
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`rounded-full border border-primary/30 text-primary font-medium px-4 py-2
+                      no-select active:bg-primary/5 ${className}`}
+          style={{ minHeight: '40px' }}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function ConfirmDialog({ open, title, message, onConfirm, onCancel }) {
+      if (!open) return null;
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+          style={{ touchAction: 'none' }}
+          onClick={onCancel}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="font-bold text-textmain text-base">{title}</div>
+            <div className="text-sm text-textsub mt-2 leading-relaxed">{message}</div>
+            <div className="flex gap-2 mt-5 justify-end">
+              <GhostButton onClick={onCancel}>취소</GhostButton>
+              <PrimaryButton onClick={onConfirm}>확인</PrimaryButton>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========== 탭 1: 홈 ==========
+    function HomeTab({ onNavigate }) {
+      const today = todayKey();
+
+      // 화이팅 메시지
+      const [cheeringList, setCheeringList] = useState(() =>
+        loadData(STORAGE_KEYS.cheering, [])
+      );
+      const [cheeringDraft, setCheeringDraft] = useState('');
+      const [overwriteOpen, setOverwriteOpen] = useState(false);
+
+      useEffect(() => {
+        saveData(STORAGE_KEYS.cheering, cheeringList);
+      }, [cheeringList]);
+
+      const todaysCheering = useMemo(
+        () => cheeringList.find(c => c.date === today) || null,
+        [cheeringList, today]
+      );
+
+      // 기분
+      const [moodList, setMoodList] = useState(() =>
+        loadData(STORAGE_KEYS.mood, [])
+      );
+      useEffect(() => {
+        saveData(STORAGE_KEYS.mood, moodList);
+      }, [moodList]);
+      const todaysMood = useMemo(
+        () => moodList.find(m => m.date === today) || null,
+        [moodList, today]
+      );
+
+      // 요약용 데이터
+      const vitals = loadData(STORAGE_KEYS.vitals, []);
+      const meals = loadData(STORAGE_KEYS.meals, []);
+      const sideEffects = loadData(STORAGE_KEYS.sideEffects, []);
+      const medications = loadData(STORAGE_KEYS.medications, []);
+
+      const todaysVital = vitals.find(v => v.date === today) || null;
+      const todaysMeal  = meals.find(m => m.date === today) || null;
+      const todaysSideEffect = sideEffects.find(s => s.date === today) || null;
+      const todaysMedCount = medications.filter(m => m.date === today).length;
+
+      const mealRatio = todaysMeal ? (() => {
+        const parts = ['breakfast', 'lunch', 'snack', 'dinner']
+          .map(k => (todaysMeal[k] ? Number(todaysMeal[k].ratio) || 0 : null))
+          .filter(v => v !== null);
+        if (parts.length === 0) return null;
+        return Math.round(parts.reduce((a, b) => a + b, 0) / parts.length);
+      })() : null;
+
+      const sideEffectCount = todaysSideEffect
+        ? Object.values(todaysSideEffect.items || {}).filter(v => Number(v) > 0).length
+        : null;
+
+      // 저장 핸들러
+      function handleSaveCheering() {
+        const text = cheeringDraft.trim();
+        if (!text) return;
+        if (todaysCheering) {
+          setOverwriteOpen(true);
+          return;
+        }
+        commitCheering(text);
+      }
+
+      function commitCheering(text) {
+        const mood = todaysMood ? todaysMood.emoji : null;
+        const newItem = { id: generateId(), date: today, mood, text };
+        setCheeringList(prev => {
+          const without = prev.filter(c => c.date !== today);
+          return [newItem, ...without];
+        });
+        setCheeringDraft('');
+        setOverwriteOpen(false);
+      }
+
+      function handleOverwriteConfirm() {
+        commitCheering(cheeringDraft.trim());
+      }
+
+      function handleSelectMood(m) {
+        const emoji = m.emoji;
+        setMoodList(prev => {
+          const without = prev.filter(x => x.date !== today);
+          return [{ date: today, emoji, value: m.value }, ...without];
+        });
+      }
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          {/* 오늘의 화이팅 */}
+          <Card title="💪 오늘의 화이팅 한마디">
+            {todaysCheering ? (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-primary/30 bg-yellow-50 p-4">
+                  <div className="text-xs text-textsub mb-1">
+                    {formatKoreanDate(todaysCheering.date)}
+                    {todaysCheering.mood ? ` · ${todaysCheering.mood}` : ''}
+                  </div>
+                  <div className="text-[15px] leading-relaxed text-textmain"
+                       style={{ userSelect: 'text', WebkitUserSelect: 'text' }}>
+                    <span className="highlighter">{todaysCheering.text}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <GhostButton
+                    onClick={() => {
+                      setCheeringDraft(todaysCheering.text);
+                      setCheeringList(prev => prev.filter(c => c.date !== today));
+                    }}
+                  >
+                    수정하기
+                  </GhostButton>
+                  <GhostButton onClick={() => onNavigate('diary')}>
+                    갤러리 보기
+                  </GhostButton>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <textarea
+                  value={cheeringDraft}
+                  onChange={(e) => setCheeringDraft(e.target.value)}
+                  placeholder="오늘의 나에게 한마디를 남겨요 💪"
+                  rows={3}
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3
+                             text-textmain placeholder:text-textsub/70 resize-none"
+                />
+                <div className="flex justify-end">
+                  <PrimaryButton
+                    onClick={handleSaveCheering}
+                    disabled={!cheeringDraft.trim()}
+                  >
+                    저장
+                  </PrimaryButton>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* 오늘의 기분 */}
+          <Card title="💖 오늘의 기분">
+            <div className="flex justify-between">
+              {MOODS.map(m => {
+                const active = todaysMood && todaysMood.value === m.value;
+                return (
+                  <button
+                    key={m.value}
+                    onClick={() => handleSelectMood(m)}
+                    aria-label={m.label}
+                    className={`mood-btn no-select flex flex-col items-center justify-center
+                                rounded-2xl ${active ? 'selected bg-primary/10 ring-2 ring-primary' : 'bg-softbg'}`}
+                    style={{ width: 60, height: 60 }}
+                  >
+                    <span className="text-3xl leading-none">{m.emoji}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="text-center text-xs text-textsub mt-3">
+              {todaysMood
+                ? `지금 기분: ${MOODS.find(x => x.value === todaysMood.value)?.label || ''}`
+                : '기분을 골라주세요'}
+            </div>
+          </Card>
+
+          {/* 오늘 요약 */}
+          <Card title="📊 오늘의 요약">
+            <ul className="divide-y divide-primary/10">
+              <SummaryRow
+                label="체중"
+                value={todaysVital ? `${todaysVital.weight} kg${todaysVital.bsa ? ` · BSA ${todaysVital.bsa}` : ''}` : null}
+                onGo={() => onNavigate('body')}
+              />
+              <SummaryRow
+                label="식사량"
+                value={mealRatio !== null ? `평균 ${mealRatio}%` : null}
+                onGo={() => onNavigate('body')}
+              />
+              <SummaryRow
+                label="부작용"
+                value={sideEffectCount !== null ? `${sideEffectCount}개 항목 기록` : null}
+                onGo={() => onNavigate('treatment')}
+              />
+              <SummaryRow
+                label="복용약"
+                value={todaysMedCount > 0 ? `${todaysMedCount}회 복용` : null}
+                onGo={() => onNavigate('treatment')}
+              />
+            </ul>
+          </Card>
+
+          <ConfirmDialog
+            open={overwriteOpen}
+            title="오늘의 화이팅을 덮어쓸까요?"
+            message="같은 날짜에 이미 저장된 화이팅 메시지가 있어요. 새 내용으로 바꾸시겠어요?"
+            onConfirm={handleOverwriteConfirm}
+            onCancel={() => setOverwriteOpen(false)}
+          />
+        </div>
+      );
+    }
+
+    function SummaryRow({ label, value, onGo }) {
+      const empty = value === null || value === undefined || value === '';
+      return (
+        <li className="py-3 flex items-center justify-between gap-2">
+          <div className="text-sm font-medium text-textmain w-20 shrink-0">{label}</div>
+          <div className={`flex-1 text-sm ${empty ? 'text-textsub' : 'text-textmain'}`}>
+            {empty ? '아직 입력 전' : value}
+          </div>
+          {empty && (
+            <button
+              onClick={onGo}
+              className="text-xs font-semibold text-primary no-select px-2 py-1 rounded-full
+                         border border-primary/30 active:bg-primary/5"
+            >
+              이동
+            </button>
+          )}
+        </li>
+      );
+    }
+
+    // ========== 탭 placeholder ==========
+    function Placeholder({ label }) {
+      return (
+        <div className="px-4 pb-6">
+          <Card>
+            <div className="py-10 text-center text-textsub text-sm">
+              {label} 탭 준비 중…
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
+    // ========== App ==========
+    function App() {
+      const [tab, setTab] = useState('home');
+
+      const titleMap = {
+        home: '오늘 기록',
+        treatment: '치료 관리',
+        body: '몸 상태',
+        diary: '마음 일기',
+        expense: '병원비 관리',
+      };
+
+      // 탭 전환 시 스크롤 최상단
+      const scrollRef = useRef(null);
+      useEffect(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      }, [tab]);
+
+      return (
+        <div className="min-h-screen flex flex-col items-center">
+          <div className="w-full max-w-[480px] min-h-screen flex flex-col bg-softbg relative">
+            <Header title={titleMap[tab]} />
+            <main
+              ref={scrollRef}
+              className="scroll-area flex-1 overflow-y-auto pt-3"
+              style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom))' }}
+            >
+              {tab === 'home'      && <HomeTab onNavigate={setTab} />}
+              {tab === 'treatment' && <Placeholder label="치료 관리" />}
+              {tab === 'body'      && <Placeholder label="몸 상태" />}
+              {tab === 'diary'     && <Placeholder label="마음 일기" />}
+              {tab === 'expense'   && <Placeholder label="병원비 관리" />}
+            </main>
+            <TabBar current={tab} onChange={setTab} />
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

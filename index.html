@@ -844,6 +844,359 @@
       );
     }
 
+    // ========== 탭 5: 병원비 관리 ==========
+    const EXPENSE_CATEGORIES = ['진료비', '약제비', '검사비', '입원비', '기타'];
+    const PAYMENT_METHODS = ['현금', '카드', '실비청구'];
+
+    // 숫자 문자열 → 콤마 포맷 / 콤마 포함 문자열 → 숫자
+    function formatWithComma(digitsOnly) {
+      if (!digitsOnly) return '';
+      return Number(digitsOnly).toLocaleString('ko-KR');
+    }
+    function parseMoney(str) {
+      const digits = String(str || '').replace(/[^\d]/g, '');
+      return digits ? Number(digits) : 0;
+    }
+    function handleCommaInput(value, setter) {
+      const digits = String(value).replace(/[^\d]/g, '');
+      setter(formatWithComma(digits));
+    }
+
+    function ExpenseTab() {
+      const [expenses, setExpenses] = useState(() => loadData(STORAGE_KEYS.expenses, []));
+      const [insurances, setInsurances] = useState(() => loadData(STORAGE_KEYS.insurance, []));
+
+      // 지출 입력 폼
+      const [eDate, setEDate] = useState(todayKey());
+      const [eItem, setEItem] = useState('');
+      const [eAmount, setEAmount] = useState('');
+      const [eCategory, setECategory] = useState(EXPENSE_CATEGORIES[0]);
+      const [ePayment, setEPayment] = useState(PAYMENT_METHODS[1]);
+
+      // 보험 입력 폼
+      const [showInsuranceForm, setShowInsuranceForm] = useState(false);
+      const [iCompany, setICompany] = useState('');
+      const [iType, setIType] = useState('');
+      const [iLimit, setILimit] = useState('');
+      const [iReceived, setIReceived] = useState('');
+
+      // 삭제 확인
+      const [deleteExpenseId, setDeleteExpenseId] = useState(null);
+      const [deleteInsuranceId, setDeleteInsuranceId] = useState(null);
+
+      useEffect(() => saveData(STORAGE_KEYS.expenses, expenses), [expenses]);
+      useEffect(() => saveData(STORAGE_KEYS.insurance, insurances), [insurances]);
+
+      function handleSaveExpense() {
+        const amount = parseMoney(eAmount);
+        if (!eItem.trim() || amount <= 0) return;
+        const entry = {
+          id: generateId(),
+          date: eDate,
+          item: eItem.trim(),
+          amount,
+          category: eCategory,
+          payment: ePayment,
+        };
+        setExpenses((prev) => [entry, ...prev]);
+        setEItem('');
+        setEAmount('');
+      }
+
+      function handleSaveInsurance() {
+        const limit = parseMoney(iLimit);
+        const received = parseMoney(iReceived);
+        if (!iCompany.trim() || limit <= 0) return;
+        const entry = {
+          id: generateId(),
+          company: iCompany.trim(),
+          type: iType.trim(),
+          limit,
+          received,
+        };
+        setInsurances((prev) => [entry, ...prev]);
+        setICompany('');
+        setIType('');
+        setILimit('');
+        setIReceived('');
+        setShowInsuranceForm(false);
+      }
+
+      function handleDeleteExpense() {
+        setExpenses((prev) => prev.filter((x) => x.id !== deleteExpenseId));
+        setDeleteExpenseId(null);
+      }
+      function handleDeleteInsurance() {
+        setInsurances((prev) => prev.filter((x) => x.id !== deleteInsuranceId));
+        setDeleteInsuranceId(null);
+      }
+
+      const sortedExpenses = useMemo(
+        () => [...expenses].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+        [expenses]
+      );
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          {/* 5-1. 병원비 입력 */}
+          <Card title="💰 병원비 입력">
+            <label className="block text-xs text-textsub mb-1">날짜</label>
+            <input
+              type="date"
+              value={eDate}
+              onChange={(e) => setEDate(e.target.value)}
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+            />
+
+            <label className="block text-xs text-textsub mb-1">항목명</label>
+            <input
+              type="text"
+              value={eItem}
+              onChange={(e) => setEItem(e.target.value)}
+              placeholder="예) 외래 진료, CT 검사"
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain placeholder:text-textsub/70"
+            />
+
+            <label className="block text-xs text-textsub mb-1">금액 (원)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={eAmount}
+              onChange={(e) => handleCommaInput(e.target.value, setEAmount)}
+              placeholder="0"
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain placeholder:text-textsub/70 text-right"
+            />
+
+            <label className="block text-xs text-textsub mb-1">카테고리</label>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {EXPENSE_CATEGORIES.map((c) => {
+                const active = eCategory === c;
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setECategory(c)}
+                    className={`no-select rounded-full px-3 py-2 text-sm
+                                ${active
+                                  ? 'bg-primary text-white font-semibold'
+                                  : 'bg-softbg text-textsub border border-primary/20'}`}
+                    style={{ minHeight: 36 }}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="block text-xs text-textsub mb-1">결제방법</label>
+            <div className="flex gap-2 mb-4">
+              {PAYMENT_METHODS.map((p) => {
+                const active = ePayment === p;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setEPayment(p)}
+                    className={`no-select flex-1 rounded-full px-3 py-2 text-sm
+                                ${active
+                                  ? 'bg-secondary text-white font-semibold'
+                                  : 'bg-softbg text-textsub border border-secondary/30'}`}
+                    style={{ minHeight: 36 }}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end">
+              <PrimaryButton
+                onClick={handleSaveExpense}
+                disabled={!eItem.trim() || parseMoney(eAmount) <= 0}
+              >
+                지출 저장
+              </PrimaryButton>
+            </div>
+          </Card>
+
+          {/* 지출 리스트 */}
+          <Card title="📒 저장된 지출">
+            {sortedExpenses.length === 0 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                아직 저장된 지출이 없어요.
+              </div>
+            ) : (
+              <ul className="divide-y divide-primary/10">
+                {sortedExpenses.map((ex) => (
+                  <li key={ex.id} className="py-3 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-textsub mb-0.5">
+                        {ex.date} · {ex.category} · {ex.payment}
+                      </div>
+                      <div className="text-sm text-textmain truncate">{ex.item}</div>
+                    </div>
+                    <div className="text-sm font-semibold text-primary whitespace-nowrap">
+                      {formatWithComma(ex.amount)}원
+                    </div>
+                    <button
+                      onClick={() => setDeleteExpenseId(ex.id)}
+                      aria-label="삭제"
+                      className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full"
+                      style={{ minHeight: 40, minWidth: 40 }}
+                    >
+                      🗑️
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* 5-2. 보험 / 실비 한도 */}
+          <Card title="🏦 보험 / 실비 한도">
+            {insurances.length === 0 ? (
+              <div className="py-4 text-center text-sm text-textsub">
+                등록된 보험이 없어요.
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {insurances.map((ins) => {
+                  const limit = Number(ins.limit) || 0;
+                  const received = Number(ins.received) || 0;
+                  const remaining = Math.max(limit - received, 0);
+                  const remainingPct = limit > 0 ? (remaining / limit) * 100 : 0;
+                  let barColor = '#10B981';
+                  if (remainingPct < 30) barColor = '#EF4444';
+                  else if (remainingPct < 70) barColor = '#F59E0B';
+                  return (
+                    <li key={ins.id} className="rounded-xl border border-primary/10 p-3">
+                      <div className="flex items-start gap-2 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-textmain truncate">
+                            {ins.company}
+                            {ins.type ? <span className="text-textsub font-normal"> · {ins.type}</span> : null}
+                          </div>
+                          <div className="text-xs text-textsub mt-0.5">
+                            한도 {formatWithComma(limit)}원 · 수령 {formatWithComma(received)}원
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setDeleteInsuranceId(ins.id)}
+                          aria-label="삭제"
+                          className="text-base no-select active:opacity-70 flex items-center justify-center rounded-full"
+                          style={{ minHeight: 36, minWidth: 36 }}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                      <div className="h-2.5 w-full rounded-full bg-softbg overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(Math.max(remainingPct, 0), 100)}%`,
+                            backgroundColor: barColor,
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between mt-1 text-[11px] text-textsub">
+                        <span>잔여 {formatWithComma(remaining)}원</span>
+                        <span style={{ color: barColor }}>
+                          {remainingPct.toFixed(1)}% 남음
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {showInsuranceForm ? (
+              <div className="mt-4 space-y-3 rounded-xl border border-primary/20 p-3 bg-softbg">
+                <div>
+                  <label className="block text-xs text-textsub mb-1">보험사명</label>
+                  <input
+                    type="text"
+                    value={iCompany}
+                    onChange={(e) => setICompany(e.target.value)}
+                    placeholder="예) OO생명"
+                    className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-textsub mb-1">보험 종류</label>
+                  <input
+                    type="text"
+                    value={iType}
+                    onChange={(e) => setIType(e.target.value)}
+                    placeholder="예) 실손, 암보험"
+                    className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-textsub mb-1">총 한도 금액 (원)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={iLimit}
+                    onChange={(e) => handleCommaInput(e.target.value, setILimit)}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70 text-right"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-textsub mb-1">이미 수령한 금액 (원)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={iReceived}
+                    onChange={(e) => handleCommaInput(e.target.value, setIReceived)}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70 text-right"
+                  />
+                </div>
+                <div className="flex gap-2 justify-end pt-1">
+                  <GhostButton onClick={() => {
+                    setShowInsuranceForm(false);
+                    setICompany(''); setIType(''); setILimit(''); setIReceived('');
+                  }}>취소</GhostButton>
+                  <PrimaryButton
+                    onClick={handleSaveInsurance}
+                    disabled={!iCompany.trim() || parseMoney(iLimit) <= 0}
+                  >
+                    보험 추가
+                  </PrimaryButton>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-end mt-3">
+                <GhostButton onClick={() => setShowInsuranceForm(true)}>
+                  + 보험 추가
+                </GhostButton>
+              </div>
+            )}
+          </Card>
+
+          {/* 5-3. 요약 대시보드 (차트 placeholder) */}
+          <Card title="📈 요약 대시보드">
+            <div className="text-center text-gray-400 py-8">차트 준비 중...</div>
+          </Card>
+
+          <ConfirmDialog
+            open={!!deleteExpenseId}
+            title="지출을 삭제할까요?"
+            message="삭제한 지출 내역은 복구할 수 없어요."
+            onConfirm={handleDeleteExpense}
+            onCancel={() => setDeleteExpenseId(null)}
+          />
+          <ConfirmDialog
+            open={!!deleteInsuranceId}
+            title="보험 정보를 삭제할까요?"
+            message="삭제한 보험 한도 정보는 복구할 수 없어요."
+            onConfirm={handleDeleteInsurance}
+            onCancel={() => setDeleteInsuranceId(null)}
+          />
+        </div>
+      );
+    }
+
     // ========== 탭 placeholder ==========
     function Placeholder({ label }) {
       return (
@@ -888,7 +1241,7 @@
               {tab === 'treatment' && <Placeholder label="치료 관리" />}
               {tab === 'body'      && <Placeholder label="몸 상태" />}
               {tab === 'diary'     && <DiaryTab />}
-              {tab === 'expense'   && <Placeholder label="병원비 관리" />}
+              {tab === 'expense'   && <ExpenseTab />}
             </main>
             <TabBar current={tab} onChange={setTab} />
           </div>

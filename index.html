@@ -1515,6 +1515,396 @@
       );
     }
 
+    // ========== 탭 2: 치료 관리 (스케줄 입력) ==========
+    // 신규 키. 기존 STORAGE_KEYS(11개)는 그대로 유지하기 위해 별도 상수로 분리.
+    const SCHEDULE_STORAGE_KEY = 'igt_schedule';
+
+    const CATEGORY_META = {
+      colorectal:  { emoji: '🎗️', label: '대장암' },
+      breast:      { emoji: '🎀', label: '유방암' },
+      lung:        { emoji: '🫁', label: '폐암' },
+      gastric:     { emoji: '🍚', label: '위암' },
+      pancreatic:  { emoji: '🟡', label: '췌장암/담도암' },
+      hematologic: { emoji: '🩸', label: '혈액암' },
+      gyne:        { emoji: '🌸', label: '난소암/자궁암' },
+      immune:      { emoji: '🛡️', label: '면역항암제' },
+      custom:      { emoji: '✏️', label: '직접 입력' },
+    };
+
+    const SCHEDULE_DISCLAIMER =
+      '※ 본 정보는 기록 보조용이며 의학적 판단을 대체하지 않습니다. 실제 투여 일정은 담당 의료진의 지시를 따르세요.';
+
+    function RegimenScheduleModal({ open, onClose, onSave }) {
+      const [step, setStep] = useState(1);
+      const [categoryKey, setCategoryKey] = useState(null);
+      const [regimen, setRegimen] = useState(null);
+
+      // 일정 입력 폼
+      const [startDate, setStartDate] = useState(todayKey());
+      const [infusionDays, setInfusionDays] = useState(1);
+      const [cycleDays, setCycleDays] = useState(14);
+      const [cycleNumber, setCycleNumber] = useState(1);
+      const [memo, setMemo] = useState('');
+
+      // 모달 열릴 때마다 상태 초기화
+      useEffect(() => {
+        if (open) {
+          setStep(1);
+          setCategoryKey(null);
+          setRegimen(null);
+          setStartDate(todayKey());
+          setInfusionDays(1);
+          setCycleDays(14);
+          setCycleNumber(1);
+          setMemo('');
+        }
+      }, [open]);
+
+      if (!open) return null;
+
+      const categoryInfo = categoryKey ? REGIMEN_PRESETS[categoryKey] : null;
+
+      function selectCategory(key) {
+        setCategoryKey(key);
+        setStep(2);
+      }
+      function selectRegimen(r) {
+        setRegimen(r);
+        setInfusionDays(Number(r.infusionDays) || 1);
+        setCycleDays(Number(r.cycleDays) || 14);
+        setStep(3);
+      }
+      function goBack() {
+        if (step === 3) setStep(2);
+        else if (step === 2) {
+          setStep(1);
+          setCategoryKey(null);
+          setRegimen(null);
+        }
+      }
+      function handleSave() {
+        if (!regimen || !categoryKey) return;
+        const inf = Math.max(0, Math.min(7, Number(infusionDays) || 0));
+        const cyc = Math.max(7, Math.min(42, Number(cycleDays) || 14));
+        const num = Math.max(1, Number(cycleNumber) || 1);
+        const entry = {
+          id: generateId(),
+          regimen: regimen.name,
+          category: categoryKey,
+          startDate,
+          infusionDays: inf,
+          cycleDays: cyc,
+          cycleNumber: num,
+          memo: memo.trim(),
+        };
+        onSave(entry);
+      }
+
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+          style={{ touchAction: 'none' }}
+          onClick={onClose}
+        >
+          <div
+            className="bg-white w-full max-w-[480px] rounded-t-2xl sm:rounded-2xl flex flex-col"
+            style={{ maxHeight: '90vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="px-4 pt-4 pb-3 flex items-center justify-between border-b border-primary/10">
+              <button
+                onClick={step > 1 ? goBack : onClose}
+                className="text-sm text-primary no-select px-2 py-1"
+                style={{ minHeight: 36, minWidth: 56 }}
+              >
+                {step > 1 ? '← 이전' : '취소'}
+              </button>
+              <div className="text-sm font-bold text-textmain">
+                항암 스케줄 추가 <span className="text-textsub font-normal">({step}/3)</span>
+              </div>
+              <button
+                onClick={onClose}
+                aria-label="닫기"
+                className="text-textsub no-select"
+                style={{ minHeight: 36, minWidth: 36 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 본문 */}
+            <div
+              className="flex-1 overflow-y-auto scroll-area px-4 py-4"
+              style={{ minHeight: 0 }}
+            >
+              {/* 1단계: 암종 선택 */}
+              {step === 1 && (
+                <>
+                  <div className="text-sm text-textmain font-semibold mb-1">암종을 선택해주세요</div>
+                  <div className="text-xs text-textsub mb-4">
+                    선택한 암종의 일반적인 항암 레지멘이 나타나요.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Object.entries(REGIMEN_PRESETS).map(([key, cat]) => {
+                      const meta = CATEGORY_META[key] || { emoji: '💊', label: cat.label };
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => selectCategory(key)}
+                          className="rounded-2xl bg-softbg border border-primary/15 p-3 text-left no-select active:bg-primary/5"
+                          style={{ minHeight: 100 }}
+                        >
+                          <div className="text-3xl mb-1 leading-none">{meta.emoji}</div>
+                          <div className="text-sm font-semibold text-textmain">
+                            {cat.label}
+                          </div>
+                          <div className="text-[11px] text-textsub mt-0.5">
+                            {cat.regimens.length}개 레지멘
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* 2단계: 레지멘 선택 */}
+              {step === 2 && categoryInfo && (
+                <>
+                  <div className="text-sm text-textmain font-semibold mb-1">
+                    {CATEGORY_META[categoryKey]?.emoji} {categoryInfo.label} 레지멘
+                  </div>
+                  <div className="text-xs text-textsub mb-4">사용하시는 레지멘을 골라주세요.</div>
+                  <ul className="space-y-2">
+                    {categoryInfo.regimens.map((r, i) => {
+                      const isHospital = (Number(r.infusionDays) || 0) >= 2;
+                      const isOral = r.type === 'oral';
+                      const isCustom = r.type === 'custom';
+                      const tag = isCustom
+                        ? '직접 입력'
+                        : isOral
+                        ? '경구'
+                        : isHospital
+                        ? '입원형'
+                        : '외래형';
+                      return (
+                        <li key={i}>
+                          <div className="rounded-xl border border-primary/15 bg-white p-3 flex items-start gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-textmain text-[15px] break-words">
+                                {r.name}
+                              </div>
+                              <div className="text-xs text-textsub mt-0.5">
+                                {r.cycleDays}일 주기 · {r.infusionDays}일 투여 · ({tag})
+                              </div>
+                              {r.desc && (
+                                <div className="text-xs text-textmain/80 mt-1 leading-relaxed">
+                                  {r.desc}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => selectRegimen(r)}
+                              className="rounded-full bg-primary text-white text-sm font-semibold px-3 py-1.5 no-select active:opacity-80 shrink-0"
+                              style={{ minHeight: 36 }}
+                            >
+                              선택
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+
+              {/* 3단계: 일정 입력 */}
+              {step === 3 && regimen && (
+                <>
+                  <div className="text-sm text-textmain font-semibold mb-3">
+                    {regimen.name}{' '}
+                    <span className="text-textsub font-normal">
+                      · {CATEGORY_META[categoryKey]?.label}
+                    </span>
+                  </div>
+
+                  <label className="block text-xs text-textsub mb-1">치료 시작일</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+                  />
+
+                  <label className="block text-xs text-textsub mb-1">입원/투여 일수 (1~7)</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={7}
+                    value={infusionDays}
+                    onChange={(e) => setInfusionDays(e.target.value)}
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+                  />
+
+                  <label className="block text-xs text-textsub mb-1">사이클 주기 (7~42일)</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={7}
+                    max={42}
+                    value={cycleDays}
+                    onChange={(e) => setCycleDays(e.target.value)}
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+                  />
+
+                  <label className="block text-xs text-textsub mb-1">차수 번호</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={cycleNumber}
+                    onChange={(e) => setCycleNumber(e.target.value)}
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+                  />
+
+                  <label className="block text-xs text-textsub mb-1">메모 (선택)</label>
+                  <textarea
+                    rows={2}
+                    value={memo}
+                    onChange={(e) => setMemo(e.target.value)}
+                    placeholder="예) ㅇㅇ병원 외래, 4박5일 입원"
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain placeholder:text-textsub/70 resize-none"
+                  />
+
+                  <div className="rounded-xl bg-yellow-50 border border-yellow-200 p-3 text-xs text-textmain leading-relaxed">
+                    💡 시작일부터 <b>{infusionDays}일</b> 동안 진한 형광펜으로,
+                    이후 다음 사이클까지 <b>{cycleDays}일</b> 동안 옅은 형광펜으로 표시됩니다.
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* 푸터: 액션 + 면책 */}
+            <div
+              className="px-4 py-3 border-t border-primary/10 flex flex-col gap-3"
+              style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+            >
+              {step === 3 && (
+                <div className="flex justify-end">
+                  <PrimaryButton onClick={handleSave}>저장</PrimaryButton>
+                </div>
+              )}
+              <div className="text-[11px] text-textsub leading-relaxed">
+                {SCHEDULE_DISCLAIMER}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function TreatmentTab() {
+      const [schedules, setSchedules] = useState(() => loadData(SCHEDULE_STORAGE_KEY, []));
+      const [modalOpen, setModalOpen] = useState(false);
+      const [deleteId, setDeleteId] = useState(null);
+
+      useEffect(() => {
+        saveData(SCHEDULE_STORAGE_KEY, schedules);
+      }, [schedules]);
+
+      function handleSaveSchedule(entry) {
+        setSchedules((prev) => [entry, ...prev]);
+        setModalOpen(false);
+      }
+      function handleDelete() {
+        setSchedules((prev) => prev.filter((s) => s.id !== deleteId));
+        setDeleteId(null);
+      }
+
+      const sorted = useMemo(
+        () =>
+          [...schedules].sort((a, b) =>
+            (b.startDate || '').localeCompare(a.startDate || '')
+          ),
+        [schedules]
+      );
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          <Card title="💊 항암 치료 스케줄">
+            <div className="text-xs text-textsub mb-3 leading-relaxed">
+              레지멘과 시작일을 등록해두면 사이클 일정이 기록됩니다.
+            </div>
+
+            {sorted.length === 0 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                아직 등록된 스케줄이 없어요.
+              </div>
+            ) : (
+              <ul className="space-y-2 mb-4">
+                {sorted.map((s) => {
+                  const meta = CATEGORY_META[s.category] || { emoji: '💊', label: '' };
+                  return (
+                    <li
+                      key={s.id}
+                      className="rounded-xl border border-primary/15 p-3 flex items-start gap-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-textsub mb-0.5">
+                          {meta.emoji} {meta.label} · {s.cycleNumber}차
+                        </div>
+                        <div className="text-sm font-semibold text-textmain truncate">
+                          {s.regimen}
+                        </div>
+                        <div className="text-xs text-textmain/80 mt-1">
+                          {s.startDate} 시작 · {s.infusionDays}일 투여 · {s.cycleDays}일 주기
+                        </div>
+                        {s.memo && (
+                          <div className="text-xs text-textsub mt-1 whitespace-pre-wrap">
+                            {s.memo}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setDeleteId(s.id)}
+                        aria-label="삭제"
+                        className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full"
+                        style={{ minHeight: 40, minWidth: 40 }}
+                      >
+                        🗑️
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            <div className="flex justify-end">
+              <PrimaryButton onClick={() => setModalOpen(true)}>
+                + 항암 스케줄 추가
+              </PrimaryButton>
+            </div>
+          </Card>
+
+          <RegimenScheduleModal
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+            onSave={handleSaveSchedule}
+          />
+
+          <ConfirmDialog
+            open={!!deleteId}
+            title="스케줄을 삭제할까요?"
+            message="삭제한 스케줄은 복구할 수 없어요."
+            onConfirm={handleDelete}
+            onCancel={() => setDeleteId(null)}
+          />
+        </div>
+      );
+    }
+
     // ========== 탭 placeholder ==========
     function Placeholder({ label }) {
       return (
@@ -1556,7 +1946,7 @@
               style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom))' }}
             >
               {tab === 'home'      && <HomeTab onNavigate={setTab} />}
-              {tab === 'treatment' && <Placeholder label="치료 관리" />}
+              {tab === 'treatment' && <TreatmentTab />}
               {tab === 'body'      && <Placeholder label="몸 상태" />}
               {tab === 'diary'     && <DiaryTab />}
               {tab === 'expense'   && <ExpenseTab />}

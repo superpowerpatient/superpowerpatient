@@ -13,6 +13,12 @@
 
   <title>이겨내자 오늘도 🎗️</title>
 
+  <!-- PWA: 매니페스트 + 아이콘 -->
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-180.png" />
+
   <!-- CDN 로딩 순서: React → ReactDOM → prop-types → Recharts → Babel → Tailwind -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -104,6 +110,17 @@
       이겨내자 오늘도 🎗️ 로딩 중…
     </div>
   </div>
+
+  <!-- PWA: Service Worker 등록 (file:// 에서는 자동 스킵) -->
+  <script>
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch((err) => {
+          console.warn('SW 등록 실패:', err);
+        });
+      });
+    }
+  </script>
 
   <script type="text/babel" data-presets="react">
     const { useState, useEffect, useMemo, useRef, useCallback } = React;

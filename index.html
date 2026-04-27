@@ -184,6 +184,146 @@
       { key: 'expense',   icon: '💰', label: '병원비' },
     ];
 
+    // ========== 항암 레지멘 프리셋 ==========
+    // 단순 기록용 참고 데이터입니다. 실제 처방은 반드시 담당의 지시를 따라야 합니다.
+    // - cycleDays: 한 사이클 길이(일)
+    // - infusionDays: 사이클 내 주입/투여 일수 (0이면 경구 단독)
+    // - type: 'infusion' | 'oral' | 'mixed' | 'custom'
+    const REGIMEN_DISCLAIMER =
+      '※ 본 레지멘 정보는 일반적인 참고 자료이며, 실제 처방·용량·일정은 담당 의료진의 지시를 따라야 합니다.';
+
+    const REGIMEN_PRESETS = {
+      // === 대장암 ===
+      colorectal: {
+        label: '대장암',
+        regimens: [
+          { name: 'FOLFOX', cycleDays: 14, infusionDays: 2, type: 'infusion',
+            desc: '입원 또는 외래 후 46시간 지속주입 (보통 1박2일~2박3일)' },
+          { name: 'FOLFIRI', cycleDays: 14, infusionDays: 2, type: 'infusion',
+            desc: '46시간 지속주입' },
+          { name: 'FOLFOXIRI', cycleDays: 14, infusionDays: 2, type: 'infusion',
+            desc: '46시간 지속주입' },
+          { name: 'XELOX (CAPOX)', cycleDays: 21, infusionDays: 1, type: 'mixed',
+            desc: '옥살리플라틴 1일 + 카페시타빈 경구 14일' },
+          { name: 'CAPIRI', cycleDays: 21, infusionDays: 1, type: 'mixed',
+            desc: '이리노테칸 1일 + 카페시타빈 경구 14일' },
+          { name: '카페시타빈 단독', cycleDays: 21, infusionDays: 0, type: 'oral',
+            desc: '경구 14일 복용 후 7일 휴약' },
+        ],
+      },
+      // === 유방암 ===
+      breast: {
+        label: '유방암',
+        regimens: [
+          { name: 'AC', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '아드리아마이신 + 사이클로포스파마이드' },
+          { name: 'AC-T', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: 'AC 4회 후 탁솔/탁소텔' },
+          { name: 'TC', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '도세탁셀 + 사이클로포스파마이드' },
+          { name: 'TCH (TCHP)', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '도세탁셀 + 카보플라틴 + 허셉틴 (+퍼제타)' },
+          { name: 'Paclitaxel weekly', cycleDays: 7, infusionDays: 1, type: 'infusion',
+            desc: '주 1회 투여' },
+          { name: 'Trastuzumab', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '허셉틴 단독 유지' },
+        ],
+      },
+      // === 폐암 ===
+      lung: {
+        label: '폐암',
+        regimens: [
+          { name: 'Pemetrexed + Cisplatin', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Pemetrexed + Carboplatin', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Paclitaxel + Carboplatin', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Gemcitabine + Cisplatin', cycleDays: 21, infusionDays: 2, type: 'infusion',
+            desc: '1일과 8일 투여' },
+          { name: 'Etoposide + Cisplatin (EP)', cycleDays: 21, infusionDays: 3, type: 'infusion',
+            desc: '소세포폐암, 1~3일 연속 투여 (보통 2박3일 입원)' },
+          { name: 'Pembrolizumab', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '키트루다, 21일 또는 42일 주기' },
+        ],
+      },
+      // === 위암 ===
+      gastric: {
+        label: '위암',
+        regimens: [
+          { name: 'XP (Capecitabine + Cisplatin)', cycleDays: 21, infusionDays: 1, type: 'mixed' },
+          { name: 'FP (5-FU + Cisplatin)', cycleDays: 28, infusionDays: 5, type: 'infusion',
+            desc: '5일 연속 입원 투여' },
+          { name: 'DCF', cycleDays: 21, infusionDays: 5, type: 'infusion',
+            desc: '도세탁셀+시스플라틴+5FU, 5일 입원' },
+          { name: 'FOLFOX', cycleDays: 14, infusionDays: 2, type: 'infusion' },
+          { name: 'Ramucirumab + Paclitaxel', cycleDays: 28, infusionDays: 1, type: 'infusion',
+            desc: '1, 8, 15일 파클리탁셀 + 1, 15일 라무시루맙' },
+        ],
+      },
+      // === 췌장암 / 담도암 ===
+      pancreatic: {
+        label: '췌장암/담도암',
+        regimens: [
+          { name: 'FOLFIRINOX', cycleDays: 14, infusionDays: 2, type: 'infusion',
+            desc: '46시간 지속주입' },
+          { name: 'Gemcitabine + Nab-paclitaxel', cycleDays: 28, infusionDays: 3, type: 'infusion',
+            desc: '1, 8, 15일 투여 후 1주 휴약' },
+          { name: 'Gemcitabine + Cisplatin', cycleDays: 21, infusionDays: 2, type: 'infusion',
+            desc: '담도암 표준' },
+          { name: 'Gemcitabine 단독', cycleDays: 28, infusionDays: 3, type: 'infusion',
+            desc: '1, 8, 15일 투여' },
+        ],
+      },
+      // === 혈액암 ===
+      hematologic: {
+        label: '혈액암 (림프종/백혈병)',
+        regimens: [
+          { name: 'R-CHOP', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: 'B세포 림프종 표준' },
+          { name: 'R-CVP', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'ABVD', cycleDays: 28, infusionDays: 2, type: 'infusion',
+            desc: '호지킨 림프종, 1일과 15일 투여' },
+          { name: 'BEACOPP', cycleDays: 21, infusionDays: 7, type: 'infusion',
+            desc: '입원 7일 강력 요법' },
+          { name: 'DA-EPOCH-R', cycleDays: 21, infusionDays: 5, type: 'infusion',
+            desc: '5일 지속주입 (보통 4박5일 입원)' },
+          { name: 'Bendamustine + Rituximab', cycleDays: 28, infusionDays: 2, type: 'infusion' },
+        ],
+      },
+      // === 부인암 ===
+      gyne: {
+        label: '난소암/자궁암',
+        regimens: [
+          { name: 'Paclitaxel + Carboplatin (TC)', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Carboplatin 단독', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Doxorubicin (PLD)', cycleDays: 28, infusionDays: 1, type: 'infusion' },
+          { name: 'Topotecan', cycleDays: 21, infusionDays: 5, type: 'infusion',
+            desc: '5일 연속 투여' },
+          { name: 'Olaparib', cycleDays: 28, infusionDays: 0, type: 'oral',
+            desc: '경구 매일 복용' },
+        ],
+      },
+      // === 면역항암제 ===
+      immune: {
+        label: '면역항암제',
+        regimens: [
+          { name: 'Pembrolizumab (키트루다)', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '21일 또는 42일 주기' },
+          { name: 'Nivolumab (옵디보)', cycleDays: 14, infusionDays: 1, type: 'infusion',
+            desc: '14일 또는 28일 주기' },
+          { name: 'Atezolizumab (티쎈트릭)', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Durvalumab (임핀지)', cycleDays: 14, infusionDays: 1, type: 'infusion' },
+          { name: 'Ipilimumab + Nivolumab', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+        ],
+      },
+      // === 직접 입력 ===
+      custom: {
+        label: '직접 입력',
+        regimens: [
+          { name: '직접 입력', cycleDays: 14, infusionDays: 1, type: 'custom',
+            desc: '본인 처방전 기준으로 입력하세요' },
+        ],
+      },
+    };
+
     // ========== 공통 UI ==========
     function Header({ title }) {
       const today = formatKoreanDate();

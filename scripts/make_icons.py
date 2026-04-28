@@ -1,14 +1,17 @@
 """
-PWA 아이콘 생성 스크립트.
-- 핑크 그라디언트 배경 + 흰색 리본 심볼 + 한글 캡션
-- 출력: icons/icon-192.png, icon-512.png, apple-touch-icon-180.png, maskable-512.png
+앱 아이콘 / 스플래시 소스 생성 스크립트.
+- PWA: icons/icon-192.png, icon-512.png, apple-touch-icon-180.png, maskable-512.png
+- Capacitor: assets/icon-only.png (1024), assets/splash.png (2732)
 실행: python3 scripts/make_icons.py
 """
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent.parent / "icons"
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "icons"
 OUT.mkdir(parents=True, exist_ok=True)
+ASSETS = ROOT / "assets"
+ASSETS.mkdir(parents=True, exist_ok=True)
 
 PRIMARY = (233, 30, 140)      # #E91E8C
 SECONDARY = (108, 99, 255)    # #6C63FF
@@ -16,16 +19,10 @@ WHITE = (255, 255, 255)
 
 
 def make_gradient(size, top, bottom):
-    img = Image.new("RGB", (size, size), top)
-    px = img.load()
-    for y in range(size):
-        t = y / (size - 1)
-        r = int(top[0] * (1 - t) + bottom[0] * t)
-        g = int(top[1] * (1 - t) + bottom[1] * t)
-        b = int(top[2] * (1 - t) + bottom[2] * t)
-        for x in range(size):
-            px[x, y] = (r, g, b)
-    return img
+    """2픽셀 미니 그라디언트를 bilinear resize로 빠르게 확대."""
+    mini = Image.new("RGB", (1, 2), top)
+    mini.putpixel((0, 1), bottom)
+    return mini.resize((size, size), Image.BILINEAR)
 
 
 def find_font(size):
@@ -136,18 +133,49 @@ def make_icon(size, padding_ratio=0.0):
     return img
 
 
+def make_splash(size):
+    """스플래시: 그라디언트 배경 위 중앙에 한글 두 줄."""
+    img = make_gradient(size, PRIMARY, SECONDARY)
+    draw = ImageDraw.Draw(img)
+    cx = size // 2
+    font_size = max(40, int(size * 0.10))
+    font = find_font(font_size)
+    line1 = "이겨내자"
+    line2 = "오늘도"
+    line1_bbox = draw.textbbox((0, 0), line1, font=font)
+    line2_bbox = draw.textbbox((0, 0), line2, font=font)
+    line1_h = line1_bbox[3] - line1_bbox[1]
+    line2_h = line2_bbox[3] - line2_bbox[1]
+    gap = int(size * 0.02)
+    block_h = line1_h + gap + line2_h
+    block_top = (size - block_h) // 2
+    draw_centered_text(draw, line1, cx, block_top, font, WHITE)
+    draw_centered_text(draw, line2, cx, block_top + line1_h + gap, font, WHITE)
+    return img
+
+
 def main():
-    targets = [
+    # 1. PWA용 아이콘
+    pwa_targets = [
         ("icon-192.png", 192, 0.0),
         ("icon-512.png", 512, 0.0),
         ("apple-touch-icon-180.png", 180, 0.0),
-        ("maskable-512.png", 512, 0.12),  # 안전 영역 확보
+        ("maskable-512.png", 512, 0.12),
     ]
-    for name, size, pad in targets:
+    for name, size, pad in pwa_targets:
         img = make_icon(size, padding_ratio=pad)
         out = OUT / name
         img.save(out, "PNG", optimize=True)
-        print(f"  generated {out.relative_to(OUT.parent)}  ({size}x{size})")
+        print(f"  generated {out.relative_to(ROOT)}  ({size}x{size})")
+
+    # 2. Capacitor용 소스 (1024 아이콘 + 2732 스플래시)
+    icon_only = make_icon(1024, padding_ratio=0.0)
+    icon_only.save(ASSETS / "icon-only.png", "PNG", optimize=True)
+    print(f"  generated {(ASSETS / 'icon-only.png').relative_to(ROOT)}  (1024x1024)")
+
+    splash = make_splash(2732)
+    splash.save(ASSETS / "splash.png", "PNG", optimize=True)
+    print(f"  generated {(ASSETS / 'splash.png').relative_to(ROOT)}  (2732x2732)")
 
 
 if __name__ == "__main__":

@@ -712,6 +712,74 @@
     }
 
     // ========== 탭 4: 마음 일기 ==========
+    // ========== 다이어리 테마 + 스티커 ==========
+    const DIARY_THEME_KEY = 'igt_diarytheme';
+
+    // 6종 테마 — 일기 카드/모달에 적용. cardClass와 swatch는 정적 문자열로 두어 Tailwind JIT가 인식하게.
+    const DIARY_THEMES = {
+      pink: {
+        label: '핑크톤',
+        emoji: '🌸',
+        cardClass: 'bg-pink-50 border-pink-200',
+        accentText: 'text-pink-700',
+        bandClass: 'bg-gradient-to-r from-pink-200 to-rose-200',
+        swatch: ['#FFE4EC', '#F472B6', '#E91E8C'],
+      },
+      wood: {
+        label: '클래식 우드',
+        emoji: '🪵',
+        cardClass: 'bg-amber-50 border-amber-300',
+        accentText: 'text-amber-800',
+        bandClass: 'bg-gradient-to-r from-amber-200 to-orange-200',
+        swatch: ['#FEF3C7', '#D97706', '#92400E'],
+      },
+      navy: {
+        label: '군청색',
+        emoji: '⚓',
+        cardClass: 'bg-indigo-50 border-indigo-300',
+        accentText: 'text-indigo-800',
+        bandClass: 'bg-gradient-to-r from-indigo-200 to-blue-200',
+        swatch: ['#E0E7FF', '#6366F1', '#1E1B4B'],
+      },
+      brown: {
+        label: '갈색톤',
+        emoji: '🍂',
+        cardClass: 'bg-stone-100 border-stone-300',
+        accentText: 'text-stone-800',
+        bandClass: 'bg-gradient-to-r from-stone-200 to-amber-200',
+        swatch: ['#FAFAF9', '#A8A29E', '#44403C'],
+      },
+      gray: {
+        label: '매트 그레이',
+        emoji: '🪨',
+        cardClass: 'bg-gray-100 border-gray-300',
+        accentText: 'text-gray-800',
+        bandClass: 'bg-gradient-to-r from-gray-200 to-slate-200',
+        swatch: ['#F3F4F6', '#9CA3AF', '#1F2937'],
+      },
+      white: {
+        label: '화이트',
+        emoji: '🤍',
+        cardClass: 'bg-white border-gray-200',
+        accentText: 'text-gray-800',
+        bandClass: 'bg-gradient-to-r from-gray-50 to-slate-100',
+        swatch: ['#FFFFFF', '#F3F4F6', '#E5E7EB'],
+      },
+    };
+    const DEFAULT_DIARY_THEME = 'pink';
+
+    // 42개 스티커 (이모지 기반)
+    const STICKER_OPTIONS = [
+      '❤️', '💕', '💖', '💗', '💝', '💞',
+      '⭐', '🌟', '✨', '🎗️', '🎀', '🌈',
+      '🌸', '🌷', '🌹', '🌻', '🌼', '🌺',
+      '🍀', '🍃', '🌿', '🌱', '🌳', '☘️',
+      '☀️', '🌙', '☁️', '⛅', '🌤️', '🌌',
+      '🦋', '🐰', '🐻', '🐱', '🐼', '🦊',
+      '🥰', '😊', '😌', '🍵', '🍰', '🧁',
+    ];
+    const MAX_STICKERS = 6;
+
     const GALLERY_GRADIENTS = [
       'from-pink-200 to-rose-100',
       'from-purple-200 to-indigo-100',
@@ -734,15 +802,38 @@
       const [draftBody, setDraftBody] = useState('');
       const [draftGrateful, setDraftGrateful] = useState(['', '', '']);
       const [draftHard, setDraftHard] = useState('');
+      const [draftStickers, setDraftStickers] = useState([]);
+      const [stickerPanelOpen, setStickerPanelOpen] = useState(false);
 
       const [viewDiary, setViewDiary] = useState(null);
       const [viewCheering, setViewCheering] = useState(null);
       const [deleteId, setDeleteId] = useState(null);
 
+      // 다이어리 테마 (저장된 값 또는 기본 핑크)
+      const [themeKey, setThemeKey] = useState(() => {
+        const k = loadData(DIARY_THEME_KEY, DEFAULT_DIARY_THEME);
+        return DIARY_THEMES[k] ? k : DEFAULT_DIARY_THEME;
+      });
+      useEffect(() => {
+        saveData(DIARY_THEME_KEY, themeKey);
+      }, [themeKey]);
+      const theme = DIARY_THEMES[themeKey] || DIARY_THEMES[DEFAULT_DIARY_THEME];
+
       // 일기 자동 저장
       useEffect(() => {
         saveData(STORAGE_KEYS.diary, diaryList);
       }, [diaryList]);
+
+      function toggleSticker(s) {
+        setDraftStickers((prev) => {
+          if (prev.includes(s)) return prev.filter((x) => x !== s);
+          if (prev.length >= MAX_STICKERS) return prev;
+          return [...prev, s];
+        });
+      }
+      function removeStickerAt(idx) {
+        setDraftStickers((prev) => prev.filter((_, i) => i !== idx));
+      }
 
       // 선택 날짜의 기분을 igt_mood에서 pre-fill (홈 탭과 연동)
       useEffect(() => {
@@ -775,11 +866,15 @@
           body,
           grateful: draftGrateful.map(g => g.trim()).filter(Boolean),
           hard: draftHard.trim(),
+          stickers: [...draftStickers],
+          themeKey,
         };
         setDiaryList(prev => [entry, ...prev]);
         setDraftBody('');
         setDraftGrateful(['', '', '']);
         setDraftHard('');
+        setDraftStickers([]);
+        setStickerPanelOpen(false);
       }
 
       function handleDelete() {
@@ -798,6 +893,42 @@
 
       return (
         <div className="px-4 pb-6 space-y-4">
+          {/* 4-0. 다이어리 테마 */}
+          <Card title="🎨 다이어리 테마">
+            <div className="text-xs text-textsub mb-3">
+              일기 카드와 모달 배경에 적용돼요.
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(DIARY_THEMES).map(([k, t]) => {
+                const active = themeKey === k;
+                return (
+                  <button
+                    key={k}
+                    onClick={() => setThemeKey(k)}
+                    className={`rounded-xl p-3 text-left no-select border transition-all
+                                ${t.cardClass}
+                                ${active ? 'ring-2 ring-primary shadow-card' : 'opacity-90'}`}
+                    style={{ minHeight: 76 }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{t.emoji}</span>
+                      <span className={`text-sm font-bold ${t.accentText}`}>{t.label}</span>
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      {t.swatch.map((c, i) => (
+                        <span
+                          key={i}
+                          className="inline-block w-4 h-4 rounded-full border border-white/70 shadow-sm"
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
           {/* 4-1. 일기 작성 */}
           <Card title="📖 마음 일기 쓰기">
             <label className="block text-xs text-textsub mb-1">날짜</label>
@@ -862,6 +993,62 @@
               className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-4 resize-none text-textmain"
             />
 
+            {/* 스티커 picker */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs text-textsub">
+                  🎀 스티커 (최대 {MAX_STICKERS}개)
+                </label>
+                <span className="text-[11px] text-textsub">
+                  {draftStickers.length}/{MAX_STICKERS}
+                </span>
+              </div>
+              <div className="flex gap-1 flex-wrap mb-2 min-h-[36px] items-center">
+                {draftStickers.length === 0 ? (
+                  <span className="text-xs text-textsub/70">아직 안 골랐어요. 아래에서 골라보세요.</span>
+                ) : (
+                  draftStickers.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => removeStickerAt(i)}
+                      className="text-2xl bg-white rounded-lg border border-primary/20 px-2 py-0.5 no-select active:opacity-70"
+                      aria-label={`${s} 제거`}
+                    >
+                      {s}
+                    </button>
+                  ))
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setStickerPanelOpen((v) => !v)}
+                className="w-full rounded-xl border border-dashed border-primary/30 text-sm text-primary py-2 no-select active:opacity-70"
+              >
+                {stickerPanelOpen ? '스티커 패널 닫기' : '+ 스티커 패널 열기'}
+              </button>
+              {stickerPanelOpen && (
+                <div className="grid grid-cols-6 gap-1 mt-2 p-2 rounded-xl bg-softbg border border-primary/10">
+                  {STICKER_OPTIONS.map((s, i) => {
+                    const picked = draftStickers.includes(s);
+                    const full = draftStickers.length >= MAX_STICKERS && !picked;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => toggleSticker(s)}
+                        disabled={full}
+                        className={`text-2xl rounded-lg py-1.5 no-select transition-all
+                                    ${picked ? 'bg-primary/15 ring-2 ring-primary' : 'bg-white active:bg-primary/5'}
+                                    ${full ? 'opacity-30' : ''}`}
+                        aria-label={s}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-end">
               <PrimaryButton onClick={handleSave} disabled={!draftBody.trim()}>
                 일기 저장
@@ -909,36 +1096,53 @@
                 아직 저장된 일기가 없어요.
               </div>
             ) : (
-              <ul className="divide-y divide-primary/10">
-                {sortedDiaries.map((d) => (
-                  <li key={d.id} className="py-3 flex items-start gap-2">
-                    <button
-                      onClick={() => setViewDiary(d)}
-                      className="flex-1 text-left no-select py-1"
+              <ul className="space-y-2">
+                {sortedDiaries.map((d) => {
+                  // 일기 작성 시점의 테마가 있으면 그걸, 없으면 현재 테마 사용
+                  const entryTheme = (d.themeKey && DIARY_THEMES[d.themeKey]) || theme;
+                  const stickers = Array.isArray(d.stickers) ? d.stickers : [];
+                  return (
+                    <li
+                      key={d.id}
+                      className={`rounded-xl border p-3 flex items-start gap-2 ${entryTheme.cardClass}`}
                     >
-                      <div className="text-xs text-textsub mb-0.5">
-                        {d.date}{d.mood ? ` · ${d.mood}` : ''}
-                      </div>
-                      <div className="text-sm text-textmain leading-snug"
-                           style={{
-                             display: '-webkit-box',
-                             WebkitLineClamp: 2,
-                             WebkitBoxOrient: 'vertical',
-                             overflow: 'hidden',
-                           }}>
-                        {d.body}
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => setDeleteId(d.id)}
-                      aria-label="삭제"
-                      className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full"
-                      style={{ minHeight: 40, minWidth: 40 }}
-                    >
-                      🗑️
-                    </button>
-                  </li>
-                ))}
+                      <button
+                        onClick={() => setViewDiary(d)}
+                        className="flex-1 text-left no-select py-0.5 min-w-0"
+                      >
+                        {stickers.length > 0 && (
+                          <div className="flex gap-0.5 mb-1.5 text-base flex-wrap">
+                            {stickers.map((s, i) => (
+                              <span key={i}>{s}</span>
+                            ))}
+                          </div>
+                        )}
+                        <div className={`text-xs mb-0.5 ${entryTheme.accentText}`}>
+                          {d.date}{d.mood ? ` · ${d.mood}` : ''}
+                        </div>
+                        <div
+                          className="text-sm text-textmain leading-snug"
+                          style={{
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {d.body}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setDeleteId(d.id)}
+                        aria-label="삭제"
+                        className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full shrink-0"
+                        style={{ minHeight: 36, minWidth: 36 }}
+                      >
+                        🗑️
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -962,35 +1166,47 @@
 
           {/* 일기 상세 모달 */}
           <DetailModal open={!!viewDiary} onClose={() => setViewDiary(null)}>
-            {viewDiary && (
-              <>
-                <div className="text-xs text-textsub mb-2">
-                  {formatKoreanDate(viewDiary.date)}{viewDiary.mood ? ` · ${viewDiary.mood}` : ''}
-                </div>
-                <div
-                  className="text-base leading-relaxed whitespace-pre-wrap text-textmain mb-4"
-                  style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
-                >
-                  {viewDiary.body}
-                </div>
-                {viewDiary.grateful && viewDiary.grateful.length > 0 && (
-                  <div className="mb-4">
-                    <div className="text-sm font-semibold text-primary mb-1">🙏 감사한 일</div>
-                    <ul className="list-disc list-inside text-sm text-textmain space-y-1">
-                      {viewDiary.grateful.map((g, i) => (
-                        <li key={i}>{g}</li>
-                      ))}
-                    </ul>
+            {viewDiary && (() => {
+              const entryTheme = (viewDiary.themeKey && DIARY_THEMES[viewDiary.themeKey]) || theme;
+              const stickers = Array.isArray(viewDiary.stickers) ? viewDiary.stickers : [];
+              return (
+                <>
+                  {/* 테마 띠 + 스티커 */}
+                  <div className={`-mx-5 -mt-4 mb-4 ${entryTheme.bandClass} px-5 py-3 rounded-t-xl`}>
+                    {stickers.length > 0 && (
+                      <div className="text-2xl flex gap-1 mb-1 flex-wrap">
+                        {stickers.map((s, i) => <span key={i}>{s}</span>)}
+                      </div>
+                    )}
+                    <div className={`text-xs font-semibold ${entryTheme.accentText}`}>
+                      {formatKoreanDate(viewDiary.date)}{viewDiary.mood ? ` · ${viewDiary.mood}` : ''}
+                    </div>
                   </div>
-                )}
-                {viewDiary.hard && (
-                  <div>
-                    <div className="text-sm font-semibold text-secondary mb-1">💙 힘들었던 점</div>
-                    <div className="text-sm text-textmain whitespace-pre-wrap">{viewDiary.hard}</div>
+                  <div
+                    className="text-base leading-relaxed whitespace-pre-wrap text-textmain mb-4"
+                    style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                  >
+                    {viewDiary.body}
                   </div>
-                )}
-              </>
-            )}
+                  {viewDiary.grateful && viewDiary.grateful.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-sm font-semibold text-primary mb-1">🙏 감사한 일</div>
+                      <ul className="list-disc list-inside text-sm text-textmain space-y-1">
+                        {viewDiary.grateful.map((g, i) => (
+                          <li key={i}>{g}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {viewDiary.hard && (
+                    <div>
+                      <div className="text-sm font-semibold text-secondary mb-1">💙 힘들었던 점</div>
+                      <div className="text-sm text-textmain whitespace-pre-wrap">{viewDiary.hard}</div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </DetailModal>
 
           <ConfirmDialog
@@ -1987,6 +2203,7 @@
       'igt_medications', 'igt_vitals', 'igt_meals', 'igt_diary',
       'igt_expenses', 'igt_insurance', 'igt_profile', 'igt_schedule',
       'igt_notify_cycle', 'igt_medreminders', 'igt_dailyrecord',
+      'igt_diarytheme',
     ];
 
     function buildBackupPayload() {

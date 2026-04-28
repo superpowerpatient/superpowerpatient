@@ -188,6 +188,49 @@ python3 scripts/make_icons.py
 
 ---
 
+## 🔔 알림 / 백업 / 푸시 (Capacitor 플러그인)
+
+| 플러그인 | 상태 | 용도 |
+|---|---|---|
+| `@capacitor/local-notifications` | ✅ 동작 | 사이클 시작 D-1 21시 + 시작일 09시 자동 알람 |
+| `@capacitor/filesystem` + `@capacitor/share` | ✅ 동작 | JSON 백업 → 카톡/메일/AirDrop 공유, 파일 선택해 복원 |
+| `@capacitor/push-notifications` | ⚠️ 스텁만 | 코드는 wiring 됐지만 서버/FCM/APNs 셋업 필요 (아래 참고) |
+
+### 푸시 알림을 실제로 동작시키려면
+
+푸시는 외부에서 메시지를 보내야 동작하므로 **백엔드 + 인증서**가 필요합니다.
+의료 데이터 앱이라 자체 서버보다는 의료진 알림·예약 변경 같은 명확한 유스케이스가 생긴 후에 추가하는 걸 추천.
+
+#### Android (FCM)
+1. [Firebase Console](https://console.firebase.google.com) → 프로젝트 생성
+2. Android 앱 등록 (패키지명: `com.superpowerpatient.igt`)
+3. `google-services.json` 다운로드 → `android/app/google-services.json` 위치에 배치
+4. `android/build.gradle` 의 `dependencies`에:
+   ```gradle
+   classpath 'com.google.gms:google-services:4.4.2'
+   ```
+5. `android/app/build.gradle` 마지막 줄에:
+   ```gradle
+   apply plugin: 'com.google.gms.google-services'
+   ```
+6. `npx cap sync android` 후 빌드
+
+#### iOS (APNs)
+1. Apple Developer 계정 → Certificates, Identifiers & Profiles
+2. App ID에 **Push Notifications** capability 활성화
+3. Provisioning Profile 갱신 후 Xcode에서 다운로드
+4. Xcode → 프로젝트 → Signing & Capabilities → **+ Capability → Push Notifications** 추가
+5. Apple Push Notification key (.p8) 생성 → 백엔드 서버에 등록
+
+#### 백엔드 (메시지 송신측)
+- Firebase Admin SDK 또는 직접 FCM HTTP v1 / APNs HTTP/2 호출
+- 토큰은 앱 안에서 `localStorage.getItem('igt_push_token')` 로 읽을 수 있음 (앱 등록 시 자동 저장)
+- 의료 메시지는 **end-to-end 암호화** 또는 페이로드 최소화 권장 (HIPAA / 개인정보보호 측면)
+
+> 푸시를 실제로 켜고 싶어지면 그때 다시 알려주세요. Firebase 셋업부터 토큰 등록 백엔드까지 차근차근 해드릴 수 있어요.
+
+---
+
 ## ⚠️ 의료 면책
 
 본 앱은 **기록 보조 도구**이며 의학적 판단을 대체하지 않습니다. 실제 처방·투여 일정·증상 해석은 반드시 담당 의료진의 지시를 따르세요. 항암 레지멘 프리셋의 정보는 일반적인 참고 자료로, 개인 처방과 다를 수 있습니다.

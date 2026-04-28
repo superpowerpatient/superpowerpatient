@@ -1541,6 +1541,44 @@
     const LocalNotifications = Caps && Caps.Plugins && Caps.Plugins.LocalNotifications;
     const Filesystem = Caps && Caps.Plugins && Caps.Plugins.Filesystem;
     const Share = Caps && Caps.Plugins && Caps.Plugins.Share;
+    const PushNotifications = Caps && Caps.Plugins && Caps.Plugins.PushNotifications;
+
+    // 푸시 알림 등록 (옵트인 시에만 호출)
+    // 실제 서버에서 메시지를 받으려면 Firebase(google-services.json, Android) +
+    // APNs Key/Provisioning Profile(iOS) + 백엔드 서버가 필요합니다.
+    // 여기서는 토큰 발급 + 수신 핸들러만 wiring 하고, 토큰을 igt_push_token에 보관합니다.
+    async function registerForPush() {
+      if (!isNativeApp || !PushNotifications) return { ok: false, reason: 'not-native' };
+      try {
+        const perm = await PushNotifications.requestPermissions();
+        if (perm.receive !== 'granted') {
+          return { ok: false, reason: 'permission-denied' };
+        }
+        await PushNotifications.register();
+        // 리스너는 한 번만 등록되도록 가드
+        if (!window.__igtPushWired) {
+          window.__igtPushWired = true;
+          PushNotifications.addListener('registration', (token) => {
+            try {
+              localStorage.setItem('igt_push_token', token.value);
+              console.info('[push] token:', token.value);
+            } catch {}
+          });
+          PushNotifications.addListener('registrationError', (err) => {
+            console.warn('[push] registrationError', err);
+          });
+          PushNotifications.addListener('pushNotificationReceived', (n) => {
+            console.info('[push] received', n);
+          });
+          PushNotifications.addListener('pushNotificationActionPerformed', (a) => {
+            console.info('[push] tapped', a);
+          });
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, reason: 'error', error: e?.message };
+      }
+    }
 
     async function ensureNotificationPermission() {
       if (!isNativeApp || !LocalNotifications) return false;

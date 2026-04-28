@@ -1654,6 +1654,331 @@
       }
     }
 
+    // ========== 약 복용 알림 ==========
+    // weekday: 0=일 ~ 6=토 (JavaScript getDay() 컨벤션).
+    // Capacitor의 weekday는 1(일)~7(토)이므로 +1 변환.
+    const MED_REMINDER_KEY = 'igt_medreminders';
+
+    function medReminderIdFor(reminderId, weekday /* 0-6 or null=daily */) {
+      let h = 0;
+      const str = `med-${reminderId}-${weekday === null || weekday === undefined ? 'd' : weekday}`;
+      for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+      return Math.abs(h) % 2_000_000_000;
+    }
+
+    async function scheduleMedReminder(r) {
+      if (!isNativeApp || !LocalNotifications) return { ok: false, reason: 'not-native' };
+      if (!r || r.enabled === false) return { ok: false, reason: 'disabled' };
+      const granted = await ensureNotificationPermission();
+      if (!granted) return { ok: false, reason: 'permission-denied' };
+
+      const [hStr, mStr] = String(r.time || '09:00').split(':');
+      const hour = Math.max(0, Math.min(23, Number(hStr) || 0));
+      const minute = Math.max(0, Math.min(59, Number(mStr) || 0));
+
+      const weekdays = Array.isArray(r.weekdays) && r.weekdays.length > 0
+        ? r.weekdays
+        : [0, 1, 2, 3, 4, 5, 6];
+      const isDaily = weekdays.length === 7;
+
+      const items = [];
+      const title = `💊 ${r.name || '약 복용 시간'}`;
+      const body = '오늘도 잊지 말고 복용해주세요.';
+
+      if (isDaily) {
+        items.push({
+          id: medReminderIdFor(r.id, null),
+          title,
+          body,
+          schedule: { on: { hour, minute }, every: 'day', allowWhileIdle: true },
+          smallIcon: 'ic_launcher',
+          extra: { medReminderId: r.id, kind: 'med' },
+        });
+      } else {
+        weekdays.forEach((dow) => {
+          items.push({
+            id: medReminderIdFor(r.id, dow),
+            title,
+            body,
+            schedule: {
+              on: { weekday: dow + 1, hour, minute }, // Capacitor: 1=Sun ~ 7=Sat
+              every: 'week',
+              allowWhileIdle: true,
+            },
+            smallIcon: 'ic_launcher',
+            extra: { medReminderId: r.id, kind: 'med', weekday: dow },
+          });
+        });
+      }
+
+      try {
+        // 같은 ID는 자동으로 덮어쓰기되지만, 다른 요일 조합으로 변경된 경우를 위해 먼저 cancel.
+        await cancelMedReminder(r.id);
+        await LocalNotifications.schedule({ notifications: items });
+        return { ok: true, count: items.length };
+      } catch (e) {
+        console.warn('med schedule failed', e);
+        return { ok: false, reason: 'error' };
+      }
+    }
+
+    async function cancelMedReminder(reminderId) {
+      if (!isNativeApp || !LocalNotifications) return;
+      const ids = [medReminderIdFor(reminderId, null)];
+      for (let i = 0; i < 7; i++) ids.push(medReminderIdFor(reminderId, i));
+      try {
+        await LocalNotifications.cancel({
+          notifications: ids.map((id) => ({ id })),
+        });
+      } catch (e) {
+        console.warn('med cancel failed', e);
+      }
+    }
+
+    function weekdaysLabel(arr) {
+      if (!arr || arr.length === 0) return '꺼짐';
+      if (arr.length === 7) return '매일';
+      if (arr.length === 5 && [1, 2, 3, 4, 5].every((d) => arr.includes(d))) return '평일';
+      if (arr.length === 2 && arr.includes(0) && arr.includes(6)) return '주말';
+      const KOR = ['일', '월', '화', '수', '목', '금', '토'];
+      return [...arr].sort((a, b) => a - b).map((d) => KOR[d]).join('·');
+    }
+
+    function MedReminderCard() {
+      const [reminders, setReminders] = useState(() => loadData(MED_REMINDER_KEY, []));
+      const [showForm, setShowForm] = useState(false);
+      const [name, setName] = useState('');
+      const [time, setTime] = useState('09:00');
+      const [weekdays, setWeekdays] = useState([0, 1, 2, 3, 4, 5, 6]);
+      const [msg, setMsg] = useState('');
+      const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+      useEffect(() => {
+        saveData(MED_REMINDER_KEY, reminders);
+      }, [reminders]);
+
+      function showMsg(t, ms = 4000) {
+        setMsg(t);
+        setTimeout(() => setMsg(''), ms);
+      }
+
+      function toggleWeekday(d) {
+        setWeekdays((prev) =>
+          prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b)
+        );
+      }
+
+      function resetForm() {
+        setName('');
+        setTime('09:00');
+        setWeekdays([0, 1, 2, 3, 4, 5, 6]);
+        setShowForm(false);
+      }
+
+      async function handleAdd() {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        if (weekdays.length === 0) {
+          showMsg('요일을 하나 이상 선택해주세요.');
+          return;
+        }
+        const r = {
+          id: generateId(),
+          name: trimmed,
+          time,
+          weekdays: [...weekdays].sort((a, b) => a - b),
+          enabled: true,
+          createdAt: new Date().toISOString(),
+        };
+        setReminders((prev) => [r, ...prev]);
+        resetForm();
+
+        const res = await scheduleMedReminder(r);
+        if (res.ok) showMsg(`🔔 ${trimmed} 알림 ${res.count}건 예약됨`);
+        else if (res.reason === 'permission-denied') showMsg('알림 권한이 거부됐어요. 시스템 설정에서 허용해주세요.');
+        else if (res.reason === 'not-native') showMsg('알림은 설치된 앱에서만 동작해요. 지금은 등록만 저장됐어요.');
+      }
+
+      async function handleToggle(r) {
+        const next = !r.enabled;
+        const updated = { ...r, enabled: next };
+        setReminders((prev) => prev.map((x) => (x.id === r.id ? updated : x)));
+        if (next) {
+          const res = await scheduleMedReminder(updated);
+          if (res.ok) showMsg(`🔔 ${r.name} 알림 켜짐 (${res.count}건)`);
+          else if (res.reason === 'permission-denied') showMsg('권한이 거부됐어요.');
+        } else {
+          await cancelMedReminder(r.id);
+          showMsg(`🔕 ${r.name} 알림 꺼짐`);
+        }
+      }
+
+      async function handleDelete() {
+        const id = confirmDeleteId;
+        await cancelMedReminder(id);
+        setReminders((prev) => prev.filter((x) => x.id !== id));
+        setConfirmDeleteId(null);
+      }
+
+      const KOR_DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+      return (
+        <Card title="💊 약 복용 알림">
+          <div className="text-xs text-textsub leading-relaxed mb-3">
+            {isNativeApp
+              ? '정해진 시간마다 약 복용을 알려드려요. 원하는 알림만 켜고 끄세요.'
+              : '⚠️ 알림은 설치된 앱(iOS/Android)에서만 울려요. 지금은 등록만 가능합니다.'}
+          </div>
+
+          {reminders.length === 0 ? (
+            <div className="py-3 text-center text-sm text-textsub">
+              아직 등록된 알림이 없어요.
+            </div>
+          ) : (
+            <ul className="space-y-2 mb-3">
+              {reminders.map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-xl border border-primary/15 p-3 flex items-center gap-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-textmain truncate">
+                      {r.name}
+                    </div>
+                    <div className="text-xs text-textsub mt-0.5">
+                      {r.time} · {weekdaysLabel(r.weekdays)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleToggle(r)}
+                    aria-label="알림 토글"
+                    className={`relative inline-flex shrink-0 rounded-full transition-colors no-select
+                                ${r.enabled ? 'bg-primary' : 'bg-gray-300'}`}
+                    style={{ width: 44, height: 26, minHeight: 26 }}
+                  >
+                    <span
+                      className="bg-white rounded-full shadow"
+                      style={{
+                        width: 20,
+                        height: 20,
+                        margin: 3,
+                        transform: r.enabled ? 'translateX(18px)' : 'translateX(0)',
+                        transition: 'transform 0.15s',
+                      }}
+                    />
+                  </button>
+                  <button
+                    onClick={() => setConfirmDeleteId(r.id)}
+                    aria-label="삭제"
+                    className="text-base no-select active:opacity-70 flex items-center justify-center rounded-full"
+                    style={{ minHeight: 36, minWidth: 36 }}
+                  >
+                    🗑️
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {showForm ? (
+            <div className="space-y-3 rounded-xl border border-primary/20 p-3 bg-softbg">
+              <div>
+                <label className="block text-xs text-textsub mb-1">약 이름</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="예) 타이레놀, 항암제 (경구)"
+                  className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-textsub mb-1">알림 시간</label>
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-textsub mb-1">반복 요일</label>
+                <div className="flex gap-2 mb-2 flex-wrap">
+                  <button
+                    onClick={() => setWeekdays([0, 1, 2, 3, 4, 5, 6])}
+                    className="rounded-full px-3 py-1.5 text-xs no-select bg-white border border-primary/20 text-textmain active:bg-primary/5"
+                  >
+                    매일
+                  </button>
+                  <button
+                    onClick={() => setWeekdays([1, 2, 3, 4, 5])}
+                    className="rounded-full px-3 py-1.5 text-xs no-select bg-white border border-primary/20 text-textmain active:bg-primary/5"
+                  >
+                    평일
+                  </button>
+                  <button
+                    onClick={() => setWeekdays([0, 6])}
+                    className="rounded-full px-3 py-1.5 text-xs no-select bg-white border border-primary/20 text-textmain active:bg-primary/5"
+                  >
+                    주말
+                  </button>
+                </div>
+                <div className="flex gap-1">
+                  {KOR_DAYS.map((d, i) => {
+                    const active = weekdays.includes(i);
+                    const accent = i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : '';
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => toggleWeekday(i)}
+                        className={`flex-1 rounded-lg py-2 text-xs font-semibold no-select
+                                    ${active
+                                      ? 'bg-primary text-white'
+                                      : `bg-white border border-primary/20 ${accent || 'text-textsub'}`}`}
+                        style={{ minHeight: 36 }}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <GhostButton onClick={resetForm}>취소</GhostButton>
+                <PrimaryButton
+                  onClick={handleAdd}
+                  disabled={!name.trim() || weekdays.length === 0}
+                >
+                  알림 추가
+                </PrimaryButton>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <GhostButton onClick={() => setShowForm(true)}>+ 약 복용 알림 추가</GhostButton>
+            </div>
+          )}
+
+          {msg && (
+            <div className="mt-3 text-xs text-textmain bg-primary/5 border border-primary/15 rounded-lg px-3 py-2 leading-relaxed">
+              {msg}
+            </div>
+          )}
+
+          <ConfirmDialog
+            open={!!confirmDeleteId}
+            title="알림을 삭제할까요?"
+            message="삭제하면 예약된 알림도 함께 취소돼요."
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmDeleteId(null)}
+          />
+        </Card>
+      );
+    }
+
     // ========== 백업 / 복원 ==========
     // localStorage 12개 키 + 부가 설정을 JSON 한 묶음으로 export/import.
     const BACKUP_KEYS = [
@@ -2403,6 +2728,8 @@
               </div>
             )}
           </Card>
+
+          <MedReminderCard />
 
           <Card title="💊 항암 치료 스케줄">
             <div className="text-xs text-textsub mb-3 leading-relaxed">

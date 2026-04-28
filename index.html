@@ -1,0 +1,3134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="이겨내자 오늘도" />
+  <meta name="theme-color" content="#E91E8C" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no, email=no, address=no" />
+
+  <title>이겨내자 오늘도 🎗️</title>
+
+  <!-- PWA: 매니페스트 + 아이콘 -->
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-180.png" />
+
+  <!-- CDN 로딩 순서: React → ReactDOM → prop-types → Recharts → Babel → Tailwind -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script crossorigin src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    // Tailwind 커스텀 테마
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#E91E8C',
+            secondary: '#6C63FF',
+            softbg: '#FFF8FC',
+            textmain: '#2D1B3D',
+            textsub: '#6B7280',
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'Apple SD Gothic Neo',
+                   'Noto Sans KR', 'Pretendard', 'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+          boxShadow: {
+            card: '0 4px 20px rgba(233, 30, 140, 0.08)',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    /* iOS Safari: 탭 파란 하이라이트 제거 */
+    * { -webkit-tap-highlight-color: transparent; }
+
+    /* 바운스 스크롤/가로 스크롤 차단 */
+    html, body {
+      overscroll-behavior-y: contain;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      background-color: #FFF8FC;
+      color: #2D1B3D;
+    }
+
+    /* iOS 자동 확대 방지: input/textarea/select는 최소 16px */
+    input, textarea, select { font-size: 16px !important; }
+
+    /* 터치 지연(300ms) 제거 */
+    button, a, [role="button"] { touch-action: manipulation; }
+
+    /* 노치/홈 인디케이터 대응 */
+    .safe-top { padding-top: env(safe-area-inset-top); }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+    /* 하단 탭바: 홈 인디케이터 위에 뜨도록 */
+    .tab-bar {
+      padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+    }
+
+    /* 내부 스크롤 영역 iOS 관성 */
+    .scroll-area {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    /* 버튼/탭 텍스트 선택 방지 */
+    .no-select {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    button:focus, input:focus, textarea:focus, select:focus { outline: none; }
+
+    /* 선택된 기분 버튼 살짝 확대 */
+    .mood-btn { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+    .mood-btn.selected { transform: scale(1.1); }
+
+    /* 형광펜 느낌 화이팅 카드 */
+    .highlighter {
+      background: linear-gradient(180deg, transparent 55%, #FFF59D 55%);
+    }
+  </style>
+</head>
+
+<body class="bg-softbg font-sans">
+  <div id="root">
+    <div style="display:flex;justify-content:center;align-items:center;height:100vh;color:#E91E8C;font-family:-apple-system,sans-serif;">
+      이겨내자 오늘도 🎗️ 로딩 중…
+    </div>
+  </div>
+
+  <!-- PWA: Service Worker 등록 (file:// 에서는 자동 스킵) -->
+  <script>
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch((err) => {
+          console.warn('SW 등록 실패:', err);
+        });
+      });
+    }
+  </script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
+    const {
+      LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+      XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+    } = Recharts;
+
+    // ========== localStorage 키 ==========
+    const STORAGE_KEYS = {
+      cheering:    'igt_cheering',
+      mood:        'igt_mood',
+      treatment:   'igt_treatment',
+      sideEffects: 'igt_sideeffects',
+      medications: 'igt_medications',
+      vitals:      'igt_vitals',
+      meals:       'igt_meals',
+      diary:       'igt_diary',
+      expenses:    'igt_expenses',
+      insurance:   'igt_insurance',
+      profile:     'igt_profile',
+    };
+
+    // ========== 공통 유틸 ==========
+    function loadData(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw === null || raw === undefined) return fallback;
+        return JSON.parse(raw);
+      } catch (e) {
+        console.warn('loadData 실패:', key, e);
+        return fallback;
+      }
+    }
+
+    function saveData(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (e) {
+        console.warn('saveData 실패:', key, e);
+      }
+    }
+
+    function generateId() {
+      return Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+    }
+
+    // 로컬 타임존 기준 YYYY-MM-DD
+    function todayKey(d) {
+      const dt = d ? new Date(d) : new Date();
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const day = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+    function formatKoreanDate(dateStr) {
+      const dt = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+      return `${dt.getFullYear()}년 ${dt.getMonth() + 1}월 ${dt.getDate()}일 (${WEEKDAYS[dt.getDay()]})`;
+    }
+
+    // ========== 기분 이모지 ==========
+    const MOODS = [
+      { value: 'great', emoji: '😄', label: '아주 좋음' },
+      { value: 'good',  emoji: '😊', label: '좋음' },
+      { value: 'soso',  emoji: '😐', label: '그저 그럼' },
+      { value: 'down',  emoji: '😔', label: '힘듦' },
+      { value: 'bad',   emoji: '😢', label: '매우 힘듦' },
+    ];
+
+    // ========== 탭 정의 ==========
+    const TABS = [
+      { key: 'home',      icon: '📋', label: '오늘' },
+      { key: 'treatment', icon: '💊', label: '치료' },
+      { key: 'body',      icon: '🏥', label: '몸상태' },
+      { key: 'diary',     icon: '📖', label: '일기' },
+      { key: 'expense',   icon: '💰', label: '병원비' },
+    ];
+
+    // ========== 항암 레지멘 프리셋 ==========
+    // 단순 기록용 참고 데이터입니다. 실제 처방은 반드시 담당의 지시를 따라야 합니다.
+    // - cycleDays: 한 사이클 길이(일)
+    // - infusionDays: 사이클 내 주입/투여 일수 (0이면 경구 단독)
+    // - type: 'infusion' | 'oral' | 'mixed' | 'custom'
+    const REGIMEN_DISCLAIMER =
+      '※ 본 레지멘 정보는 일반적인 참고 자료이며, 실제 처방·용량·일정은 담당 의료진의 지시를 따라야 합니다.';
+
+    const REGIMEN_PRESETS = {
+      // === 대장암 ===
+      colorectal: {
+        label: '대장암',
+        regimens: [
+          { name: 'FOLFOX', cycleDays: 14, infusionDays: 2, type: 'infusion',
+            desc: '입원 또는 외래 후 46시간 지속주입 (보통 1박2일~2박3일)' },
+          { name: 'FOLFIRI', cycleDays: 14, infusionDays: 2, type: 'infusion',
+            desc: '46시간 지속주입' },
+          { name: 'FOLFOXIRI', cycleDays: 14, infusionDays: 2, type: 'infusion',
+            desc: '46시간 지속주입' },
+          { name: 'XELOX (CAPOX)', cycleDays: 21, infusionDays: 1, type: 'mixed',
+            desc: '옥살리플라틴 1일 + 카페시타빈 경구 14일' },
+          { name: 'CAPIRI', cycleDays: 21, infusionDays: 1, type: 'mixed',
+            desc: '이리노테칸 1일 + 카페시타빈 경구 14일' },
+          { name: '카페시타빈 단독', cycleDays: 21, infusionDays: 0, type: 'oral',
+            desc: '경구 14일 복용 후 7일 휴약' },
+        ],
+      },
+      // === 유방암 ===
+      breast: {
+        label: '유방암',
+        regimens: [
+          { name: 'AC', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '아드리아마이신 + 사이클로포스파마이드' },
+          { name: 'AC-T', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: 'AC 4회 후 탁솔/탁소텔' },
+          { name: 'TC', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '도세탁셀 + 사이클로포스파마이드' },
+          { name: 'TCH (TCHP)', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '도세탁셀 + 카보플라틴 + 허셉틴 (+퍼제타)' },
+          { name: 'Paclitaxel weekly', cycleDays: 7, infusionDays: 1, type: 'infusion',
+            desc: '주 1회 투여' },
+          { name: 'Trastuzumab', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '허셉틴 단독 유지' },
+        ],
+      },
+      // === 폐암 ===
+      lung: {
+        label: '폐암',
+        regimens: [
+          { name: 'Pemetrexed + Cisplatin', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Pemetrexed + Carboplatin', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Paclitaxel + Carboplatin', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Gemcitabine + Cisplatin', cycleDays: 21, infusionDays: 2, type: 'infusion',
+            desc: '1일과 8일 투여' },
+          { name: 'Etoposide + Cisplatin (EP)', cycleDays: 21, infusionDays: 3, type: 'infusion',
+            desc: '소세포폐암, 1~3일 연속 투여 (보통 2박3일 입원)' },
+          { name: 'Pembrolizumab', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '키트루다, 21일 또는 42일 주기' },
+        ],
+      },
+      // === 위암 ===
+      gastric: {
+        label: '위암',
+        regimens: [
+          { name: 'XP (Capecitabine + Cisplatin)', cycleDays: 21, infusionDays: 1, type: 'mixed' },
+          { name: 'FP (5-FU + Cisplatin)', cycleDays: 28, infusionDays: 5, type: 'infusion',
+            desc: '5일 연속 입원 투여' },
+          { name: 'DCF', cycleDays: 21, infusionDays: 5, type: 'infusion',
+            desc: '도세탁셀+시스플라틴+5FU, 5일 입원' },
+          { name: 'FOLFOX', cycleDays: 14, infusionDays: 2, type: 'infusion' },
+          { name: 'Ramucirumab + Paclitaxel', cycleDays: 28, infusionDays: 1, type: 'infusion',
+            desc: '1, 8, 15일 파클리탁셀 + 1, 15일 라무시루맙' },
+        ],
+      },
+      // === 췌장암 / 담도암 ===
+      pancreatic: {
+        label: '췌장암/담도암',
+        regimens: [
+          { name: 'FOLFIRINOX', cycleDays: 14, infusionDays: 2, type: 'infusion',
+            desc: '46시간 지속주입' },
+          { name: 'Gemcitabine + Nab-paclitaxel', cycleDays: 28, infusionDays: 3, type: 'infusion',
+            desc: '1, 8, 15일 투여 후 1주 휴약' },
+          { name: 'Gemcitabine + Cisplatin', cycleDays: 21, infusionDays: 2, type: 'infusion',
+            desc: '담도암 표준' },
+          { name: 'Gemcitabine 단독', cycleDays: 28, infusionDays: 3, type: 'infusion',
+            desc: '1, 8, 15일 투여' },
+        ],
+      },
+      // === 혈액암 ===
+      hematologic: {
+        label: '혈액암 (림프종/백혈병)',
+        regimens: [
+          { name: 'R-CHOP', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: 'B세포 림프종 표준' },
+          { name: 'R-CVP', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'ABVD', cycleDays: 28, infusionDays: 2, type: 'infusion',
+            desc: '호지킨 림프종, 1일과 15일 투여' },
+          { name: 'BEACOPP', cycleDays: 21, infusionDays: 7, type: 'infusion',
+            desc: '입원 7일 강력 요법' },
+          { name: 'DA-EPOCH-R', cycleDays: 21, infusionDays: 5, type: 'infusion',
+            desc: '5일 지속주입 (보통 4박5일 입원)' },
+          { name: 'Bendamustine + Rituximab', cycleDays: 28, infusionDays: 2, type: 'infusion' },
+        ],
+      },
+      // === 부인암 ===
+      gyne: {
+        label: '난소암/자궁암',
+        regimens: [
+          { name: 'Paclitaxel + Carboplatin (TC)', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Carboplatin 단독', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Doxorubicin (PLD)', cycleDays: 28, infusionDays: 1, type: 'infusion' },
+          { name: 'Topotecan', cycleDays: 21, infusionDays: 5, type: 'infusion',
+            desc: '5일 연속 투여' },
+          { name: 'Olaparib', cycleDays: 28, infusionDays: 0, type: 'oral',
+            desc: '경구 매일 복용' },
+        ],
+      },
+      // === 면역항암제 ===
+      immune: {
+        label: '면역항암제',
+        regimens: [
+          { name: 'Pembrolizumab (키트루다)', cycleDays: 21, infusionDays: 1, type: 'infusion',
+            desc: '21일 또는 42일 주기' },
+          { name: 'Nivolumab (옵디보)', cycleDays: 14, infusionDays: 1, type: 'infusion',
+            desc: '14일 또는 28일 주기' },
+          { name: 'Atezolizumab (티쎈트릭)', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+          { name: 'Durvalumab (임핀지)', cycleDays: 14, infusionDays: 1, type: 'infusion' },
+          { name: 'Ipilimumab + Nivolumab', cycleDays: 21, infusionDays: 1, type: 'infusion' },
+        ],
+      },
+      // === 직접 입력 ===
+      custom: {
+        label: '직접 입력',
+        regimens: [
+          { name: '직접 입력', cycleDays: 14, infusionDays: 1, type: 'custom',
+            desc: '본인 처방전 기준으로 입력하세요' },
+        ],
+      },
+    };
+
+    // ========== 공통 UI ==========
+    function Header({ title }) {
+      const today = formatKoreanDate();
+      return (
+        <header className="safe-top sticky top-0 z-20 bg-softbg/95 backdrop-blur">
+          <div className="px-5 pt-3 pb-3 flex items-end justify-between">
+            <div>
+              <div className="text-lg font-bold text-primary leading-tight">
+                이겨내자 오늘도 🎗️
+              </div>
+              <div className="text-xs text-textsub mt-0.5">{today}</div>
+            </div>
+            <div className="text-sm font-semibold text-textmain">{title}</div>
+          </div>
+          <div className="h-px bg-primary/10" />
+        </header>
+      );
+    }
+
+    function TabBar({ current, onChange }) {
+      return (
+        <nav className="tab-bar fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px]
+                        bg-white/95 backdrop-blur border-t border-primary/10 z-30 no-select">
+          <ul className="flex">
+            {TABS.map(t => {
+              const active = current === t.key;
+              return (
+                <li key={t.key} className="flex-1">
+                  <button
+                    onClick={() => onChange(t.key)}
+                    className={`w-full flex flex-col items-center justify-center py-2
+                                ${active ? 'text-primary' : 'text-textsub'}`}
+                    style={{ minHeight: '56px' }}
+                    aria-label={t.label}
+                  >
+                    <span className="text-2xl leading-none">{t.icon}</span>
+                    <span className={`text-[11px] mt-1 ${active ? 'font-bold' : ''}`}>
+                      {t.label}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      );
+    }
+
+    function Card({ title, children, className = '' }) {
+      return (
+        <section className={`bg-white rounded-2xl shadow-card p-4 ${className}`}>
+          {title && (
+            <h2 className="text-base font-bold text-textmain mb-3">{title}</h2>
+          )}
+          {children}
+        </section>
+      );
+    }
+
+    function PrimaryButton({ children, onClick, disabled, type = 'button', className = '' }) {
+      return (
+        <button
+          type={type}
+          onClick={onClick}
+          disabled={disabled}
+          className={`rounded-full bg-primary text-white font-semibold px-5 py-3 no-select
+                      active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed
+                      ${className}`}
+          style={{ minHeight: '44px' }}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function GhostButton({ children, onClick, className = '' }) {
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`rounded-full border border-primary/30 text-primary font-medium px-4 py-2
+                      no-select active:bg-primary/5 ${className}`}
+          style={{ minHeight: '40px' }}
+        >
+          {children}
+        </button>
+      );
+    }
+
+    function ConfirmDialog({ open, title, message, onConfirm, onCancel }) {
+      if (!open) return null;
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6"
+          style={{ touchAction: 'none' }}
+          onClick={onCancel}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="font-bold text-textmain text-base">{title}</div>
+            <div className="text-sm text-textsub mt-2 leading-relaxed">{message}</div>
+            <div className="flex gap-2 mt-5 justify-end">
+              <GhostButton onClick={onCancel}>취소</GhostButton>
+              <PrimaryButton onClick={onConfirm}>확인</PrimaryButton>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========== 탭 1: 홈 ==========
+    function HomeTab({ onNavigate }) {
+      const today = todayKey();
+
+      // 화이팅 메시지
+      const [cheeringList, setCheeringList] = useState(() =>
+        loadData(STORAGE_KEYS.cheering, [])
+      );
+      const [cheeringDraft, setCheeringDraft] = useState('');
+      const [overwriteOpen, setOverwriteOpen] = useState(false);
+
+      useEffect(() => {
+        saveData(STORAGE_KEYS.cheering, cheeringList);
+      }, [cheeringList]);
+
+      const todaysCheering = useMemo(
+        () => cheeringList.find(c => c.date === today) || null,
+        [cheeringList, today]
+      );
+
+      // 기분
+      const [moodList, setMoodList] = useState(() =>
+        loadData(STORAGE_KEYS.mood, [])
+      );
+      useEffect(() => {
+        saveData(STORAGE_KEYS.mood, moodList);
+      }, [moodList]);
+      const todaysMood = useMemo(
+        () => moodList.find(m => m.date === today) || null,
+        [moodList, today]
+      );
+
+      // 요약용 데이터
+      const vitals = loadData(STORAGE_KEYS.vitals, []);
+      const meals = loadData(STORAGE_KEYS.meals, []);
+      const sideEffects = loadData(STORAGE_KEYS.sideEffects, []);
+      const medications = loadData(STORAGE_KEYS.medications, []);
+
+      const todaysVital = vitals.find(v => v.date === today) || null;
+      const todaysMeal  = meals.find(m => m.date === today) || null;
+      const todaysSideEffect = sideEffects.find(s => s.date === today) || null;
+      const todaysMedCount = medications.filter(m => m.date === today).length;
+
+      const mealRatio = todaysMeal ? (() => {
+        const parts = ['breakfast', 'lunch', 'snack', 'dinner']
+          .map(k => (todaysMeal[k] ? Number(todaysMeal[k].ratio) || 0 : null))
+          .filter(v => v !== null);
+        if (parts.length === 0) return null;
+        return Math.round(parts.reduce((a, b) => a + b, 0) / parts.length);
+      })() : null;
+
+      const sideEffectCount = todaysSideEffect
+        ? Object.values(todaysSideEffect.items || {}).filter(v => Number(v) > 0).length
+        : null;
+
+      // 저장 핸들러
+      function handleSaveCheering() {
+        const text = cheeringDraft.trim();
+        if (!text) return;
+        if (todaysCheering) {
+          setOverwriteOpen(true);
+          return;
+        }
+        commitCheering(text);
+      }
+
+      function commitCheering(text) {
+        const mood = todaysMood ? todaysMood.emoji : null;
+        const newItem = { id: generateId(), date: today, mood, text };
+        setCheeringList(prev => {
+          const without = prev.filter(c => c.date !== today);
+          return [newItem, ...without];
+        });
+        setCheeringDraft('');
+        setOverwriteOpen(false);
+      }
+
+      function handleOverwriteConfirm() {
+        commitCheering(cheeringDraft.trim());
+      }
+
+      function handleSelectMood(m) {
+        const emoji = m.emoji;
+        setMoodList(prev => {
+          const without = prev.filter(x => x.date !== today);
+          return [{ date: today, emoji, value: m.value }, ...without];
+        });
+      }
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          {/* 오늘의 화이팅 */}
+          <Card title="💪 오늘의 화이팅 한마디">
+            {todaysCheering ? (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-primary/30 bg-yellow-50 p-4">
+                  <div className="text-xs text-textsub mb-1">
+                    {formatKoreanDate(todaysCheering.date)}
+                    {todaysCheering.mood ? ` · ${todaysCheering.mood}` : ''}
+                  </div>
+                  <div className="text-[15px] leading-relaxed text-textmain"
+                       style={{ userSelect: 'text', WebkitUserSelect: 'text' }}>
+                    <span className="highlighter">{todaysCheering.text}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <GhostButton
+                    onClick={() => {
+                      setCheeringDraft(todaysCheering.text);
+                      setCheeringList(prev => prev.filter(c => c.date !== today));
+                    }}
+                  >
+                    수정하기
+                  </GhostButton>
+                  <GhostButton onClick={() => onNavigate('diary')}>
+                    갤러리 보기
+                  </GhostButton>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <textarea
+                  value={cheeringDraft}
+                  onChange={(e) => setCheeringDraft(e.target.value)}
+                  placeholder="오늘의 나에게 한마디를 남겨요 💪"
+                  rows={3}
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3
+                             text-textmain placeholder:text-textsub/70 resize-none"
+                />
+                <div className="flex justify-end">
+                  <PrimaryButton
+                    onClick={handleSaveCheering}
+                    disabled={!cheeringDraft.trim()}
+                  >
+                    저장
+                  </PrimaryButton>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* 오늘의 기분 */}
+          <Card title="💖 오늘의 기분">
+            <div className="flex justify-between">
+              {MOODS.map(m => {
+                const active = todaysMood && todaysMood.value === m.value;
+                return (
+                  <button
+                    key={m.value}
+                    onClick={() => handleSelectMood(m)}
+                    aria-label={m.label}
+                    className={`mood-btn no-select flex flex-col items-center justify-center
+                                rounded-2xl ${active ? 'selected bg-primary/10 ring-2 ring-primary' : 'bg-softbg'}`}
+                    style={{ width: 60, height: 60 }}
+                  >
+                    <span className="text-3xl leading-none">{m.emoji}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="text-center text-xs text-textsub mt-3">
+              {todaysMood
+                ? `지금 기분: ${MOODS.find(x => x.value === todaysMood.value)?.label || ''}`
+                : '기분을 골라주세요'}
+            </div>
+          </Card>
+
+          {/* 오늘 요약 */}
+          <Card title="📊 오늘의 요약">
+            <ul className="divide-y divide-primary/10">
+              <SummaryRow
+                label="체중"
+                value={todaysVital ? `${todaysVital.weight} kg${todaysVital.bsa ? ` · BSA ${todaysVital.bsa}` : ''}` : null}
+                onGo={() => onNavigate('body')}
+              />
+              <SummaryRow
+                label="식사량"
+                value={mealRatio !== null ? `평균 ${mealRatio}%` : null}
+                onGo={() => onNavigate('body')}
+              />
+              <SummaryRow
+                label="부작용"
+                value={sideEffectCount !== null ? `${sideEffectCount}개 항목 기록` : null}
+                onGo={() => onNavigate('treatment')}
+              />
+              <SummaryRow
+                label="복용약"
+                value={todaysMedCount > 0 ? `${todaysMedCount}회 복용` : null}
+                onGo={() => onNavigate('treatment')}
+              />
+            </ul>
+          </Card>
+
+          <BackupCard />
+
+          <ConfirmDialog
+            open={overwriteOpen}
+            title="오늘의 화이팅을 덮어쓸까요?"
+            message="같은 날짜에 이미 저장된 화이팅 메시지가 있어요. 새 내용으로 바꾸시겠어요?"
+            onConfirm={handleOverwriteConfirm}
+            onCancel={() => setOverwriteOpen(false)}
+          />
+        </div>
+      );
+    }
+
+    function SummaryRow({ label, value, onGo }) {
+      const empty = value === null || value === undefined || value === '';
+      return (
+        <li className="py-3 flex items-center justify-between gap-2">
+          <div className="text-sm font-medium text-textmain w-20 shrink-0">{label}</div>
+          <div className={`flex-1 text-sm ${empty ? 'text-textsub' : 'text-textmain'}`}>
+            {empty ? '아직 입력 전' : value}
+          </div>
+          {empty && (
+            <button
+              onClick={onGo}
+              className="text-xs font-semibold text-primary no-select px-2 py-1 rounded-full
+                         border border-primary/30 active:bg-primary/5"
+            >
+              이동
+            </button>
+          )}
+        </li>
+      );
+    }
+
+    // ========== 공통: 상세 보기 모달 ==========
+    function DetailModal({ open, onClose, children }) {
+      if (!open) return null;
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+          style={{ touchAction: 'none' }}
+          onClick={onClose}
+        >
+          <div
+            className="bg-white w-full max-w-[480px] rounded-t-2xl sm:rounded-2xl p-5 max-h-[85vh] overflow-y-auto scroll-area"
+            style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={onClose}
+                aria-label="닫기"
+                className="text-textsub no-select text-xl px-2"
+                style={{ minHeight: 36, minWidth: 36 }}
+              >
+                ✕
+              </button>
+            </div>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    // ========== 탭 4: 마음 일기 ==========
+    const GALLERY_GRADIENTS = [
+      'from-pink-200 to-rose-100',
+      'from-purple-200 to-indigo-100',
+      'from-yellow-200 to-orange-100',
+      'from-green-200 to-teal-100',
+      'from-blue-200 to-cyan-100',
+      'from-red-200 to-pink-100',
+      'from-indigo-200 to-purple-100',
+      'from-teal-200 to-green-100',
+      'from-orange-200 to-yellow-100',
+      'from-cyan-200 to-blue-100',
+    ];
+
+    function DiaryTab() {
+      const [diaryList, setDiaryList] = useState(() => loadData(STORAGE_KEYS.diary, []));
+      const [cheeringList] = useState(() => loadData(STORAGE_KEYS.cheering, []));
+
+      const [draftDate, setDraftDate] = useState(todayKey());
+      const [draftMood, setDraftMood] = useState(null);
+      const [draftBody, setDraftBody] = useState('');
+      const [draftGrateful, setDraftGrateful] = useState(['', '', '']);
+      const [draftHard, setDraftHard] = useState('');
+
+      const [viewDiary, setViewDiary] = useState(null);
+      const [viewCheering, setViewCheering] = useState(null);
+      const [deleteId, setDeleteId] = useState(null);
+
+      // 일기 자동 저장
+      useEffect(() => {
+        saveData(STORAGE_KEYS.diary, diaryList);
+      }, [diaryList]);
+
+      // 선택 날짜의 기분을 igt_mood에서 pre-fill (홈 탭과 연동)
+      useEffect(() => {
+        const moods = loadData(STORAGE_KEYS.mood, []);
+        const m = moods.find(x => x.date === draftDate);
+        setDraftMood(m ? m.value : null);
+      }, [draftDate]);
+
+      function handleSelectMood(value) {
+        setDraftMood(value);
+        // 같은 날짜의 mood를 igt_mood에 write-back (홈과 연동)
+        const mObj = MOODS.find(x => x.value === value);
+        if (!mObj) return;
+        const moods = loadData(STORAGE_KEYS.mood, []);
+        const without = moods.filter(x => x.date !== draftDate);
+        saveData(STORAGE_KEYS.mood, [
+          { date: draftDate, emoji: mObj.emoji, value: mObj.value },
+          ...without,
+        ]);
+      }
+
+      function handleSave() {
+        const body = draftBody.trim();
+        if (!body) return;
+        const moodObj = MOODS.find(m => m.value === draftMood);
+        const entry = {
+          id: generateId(),
+          date: draftDate,
+          mood: moodObj ? moodObj.emoji : null,
+          body,
+          grateful: draftGrateful.map(g => g.trim()).filter(Boolean),
+          hard: draftHard.trim(),
+        };
+        setDiaryList(prev => [entry, ...prev]);
+        setDraftBody('');
+        setDraftGrateful(['', '', '']);
+        setDraftHard('');
+      }
+
+      function handleDelete() {
+        setDiaryList(prev => prev.filter(d => d.id !== deleteId));
+        setDeleteId(null);
+      }
+
+      const sortedDiaries = useMemo(
+        () => [...diaryList].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+        [diaryList]
+      );
+      const sortedCheerings = useMemo(
+        () => [...cheeringList].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+        [cheeringList]
+      );
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          {/* 4-1. 일기 작성 */}
+          <Card title="📖 마음 일기 쓰기">
+            <label className="block text-xs text-textsub mb-1">날짜</label>
+            <input
+              type="date"
+              value={draftDate}
+              onChange={(e) => setDraftDate(e.target.value)}
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-4 text-textmain"
+            />
+
+            <label className="block text-xs text-textsub mb-2">오늘의 기분</label>
+            <div className="flex justify-between mb-4">
+              {MOODS.map((m) => {
+                const active = draftMood === m.value;
+                return (
+                  <button
+                    key={m.value}
+                    onClick={() => handleSelectMood(m.value)}
+                    aria-label={m.label}
+                    className={`mood-btn no-select flex items-center justify-center rounded-2xl
+                                ${active ? 'selected bg-primary/10 ring-2 ring-primary' : 'bg-softbg'}`}
+                    style={{ width: 54, height: 54 }}
+                  >
+                    <span className="text-2xl leading-none">{m.emoji}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="block text-xs text-textsub mb-1">오늘의 이야기</label>
+            <textarea
+              value={draftBody}
+              onChange={(e) => setDraftBody(e.target.value)}
+              rows={8}
+              placeholder="오늘 있었던 일, 느낀 점을 자유롭게 적어봐요."
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-4 resize-none text-textmain placeholder:text-textsub/70"
+            />
+
+            <label className="block text-xs text-textsub mb-1">감사한 일 3가지 (선택)</label>
+            <div className="space-y-2 mb-4">
+              {[0, 1, 2].map((i) => (
+                <input
+                  key={i}
+                  type="text"
+                  value={draftGrateful[i]}
+                  onChange={(e) => {
+                    const next = [...draftGrateful];
+                    next[i] = e.target.value;
+                    setDraftGrateful(next);
+                  }}
+                  placeholder={`감사 ${i + 1}`}
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70"
+                />
+              ))}
+            </div>
+
+            <label className="block text-xs text-textsub mb-1">힘들었던 점 (선택)</label>
+            <textarea
+              value={draftHard}
+              onChange={(e) => setDraftHard(e.target.value)}
+              rows={3}
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-4 resize-none text-textmain"
+            />
+
+            <div className="flex justify-end">
+              <PrimaryButton onClick={handleSave} disabled={!draftBody.trim()}>
+                일기 저장
+              </PrimaryButton>
+            </div>
+          </Card>
+
+          {/* 4-2. 화이팅 갤러리 */}
+          <Card title="💪 화이팅 갤러리">
+            {sortedCheerings.length === 0 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                홈 탭에서 저장한 화이팅 메시지가 여기에 모여요.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {sortedCheerings.map((c, i) => (
+                  <button
+                    key={c.id || c.date}
+                    onClick={() => setViewCheering(c)}
+                    className={`no-select text-left p-3 rounded-2xl shadow-sm bg-gradient-to-br ${GALLERY_GRADIENTS[i % 10]} active:opacity-80`}
+                    style={{ minHeight: 110 }}
+                  >
+                    <div className="text-[11px] text-textsub mb-1">
+                      {c.date}{c.mood ? ` · ${c.mood}` : ''}
+                    </div>
+                    <div className="text-sm font-medium text-textmain leading-snug"
+                         style={{
+                           display: '-webkit-box',
+                           WebkitLineClamp: 4,
+                           WebkitBoxOrient: 'vertical',
+                           overflow: 'hidden',
+                         }}>
+                      {c.text}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* 4-3. 일기 목록 */}
+          <Card title="📔 일기 목록">
+            {sortedDiaries.length === 0 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                아직 저장된 일기가 없어요.
+              </div>
+            ) : (
+              <ul className="divide-y divide-primary/10">
+                {sortedDiaries.map((d) => (
+                  <li key={d.id} className="py-3 flex items-start gap-2">
+                    <button
+                      onClick={() => setViewDiary(d)}
+                      className="flex-1 text-left no-select py-1"
+                    >
+                      <div className="text-xs text-textsub mb-0.5">
+                        {d.date}{d.mood ? ` · ${d.mood}` : ''}
+                      </div>
+                      <div className="text-sm text-textmain leading-snug"
+                           style={{
+                             display: '-webkit-box',
+                             WebkitLineClamp: 2,
+                             WebkitBoxOrient: 'vertical',
+                             overflow: 'hidden',
+                           }}>
+                        {d.body}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setDeleteId(d.id)}
+                      aria-label="삭제"
+                      className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full"
+                      style={{ minHeight: 40, minWidth: 40 }}
+                    >
+                      🗑️
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* 화이팅 상세 모달 */}
+          <DetailModal open={!!viewCheering} onClose={() => setViewCheering(null)}>
+            {viewCheering && (
+              <>
+                <div className="text-xs text-textsub mb-2">
+                  {formatKoreanDate(viewCheering.date)}{viewCheering.mood ? ` · ${viewCheering.mood}` : ''}
+                </div>
+                <div
+                  className="text-base leading-relaxed whitespace-pre-wrap text-textmain"
+                  style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                >
+                  {viewCheering.text}
+                </div>
+              </>
+            )}
+          </DetailModal>
+
+          {/* 일기 상세 모달 */}
+          <DetailModal open={!!viewDiary} onClose={() => setViewDiary(null)}>
+            {viewDiary && (
+              <>
+                <div className="text-xs text-textsub mb-2">
+                  {formatKoreanDate(viewDiary.date)}{viewDiary.mood ? ` · ${viewDiary.mood}` : ''}
+                </div>
+                <div
+                  className="text-base leading-relaxed whitespace-pre-wrap text-textmain mb-4"
+                  style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                >
+                  {viewDiary.body}
+                </div>
+                {viewDiary.grateful && viewDiary.grateful.length > 0 && (
+                  <div className="mb-4">
+                    <div className="text-sm font-semibold text-primary mb-1">🙏 감사한 일</div>
+                    <ul className="list-disc list-inside text-sm text-textmain space-y-1">
+                      {viewDiary.grateful.map((g, i) => (
+                        <li key={i}>{g}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {viewDiary.hard && (
+                  <div>
+                    <div className="text-sm font-semibold text-secondary mb-1">💙 힘들었던 점</div>
+                    <div className="text-sm text-textmain whitespace-pre-wrap">{viewDiary.hard}</div>
+                  </div>
+                )}
+              </>
+            )}
+          </DetailModal>
+
+          <ConfirmDialog
+            open={!!deleteId}
+            title="일기를 삭제할까요?"
+            message="삭제한 일기는 복구할 수 없어요."
+            onConfirm={handleDelete}
+            onCancel={() => setDeleteId(null)}
+          />
+        </div>
+      );
+    }
+
+    // ========== 탭 5: 병원비 관리 ==========
+    const EXPENSE_CATEGORIES = ['진료비', '약제비', '검사비', '입원비', '기타'];
+    const PAYMENT_METHODS = ['현금', '카드', '실비청구'];
+    const CATEGORY_COLORS = ['#E91E8C', '#6C63FF', '#10B981', '#F59E0B', '#EF4444'];
+
+    // ========== 5-3 대시보드 차트 ==========
+    function ExpenseDashboard({ expenses }) {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = now.getMonth();
+      const thisMonthKey = `${yyyy}-${String(mm + 1).padStart(2, '0')}`;
+
+      // 이번 달 지출만 필터
+      const thisMonthExpenses = useMemo(
+        () => expenses.filter((e) => (e.date || '').startsWith(thisMonthKey)),
+        [expenses, thisMonthKey]
+      );
+
+      // PieChart 데이터: 이번 달 카테고리별 합계
+      const pieData = useMemo(() => {
+        const map = Object.fromEntries(EXPENSE_CATEGORIES.map((c) => [c, 0]));
+        thisMonthExpenses.forEach((e) => {
+          if (map[e.category] !== undefined) {
+            map[e.category] += Number(e.amount) || 0;
+          }
+        });
+        return EXPENSE_CATEGORIES
+          .map((c) => ({ name: c, value: map[c] }))
+          .filter((d) => d.value > 0);
+      }, [thisMonthExpenses]);
+
+      const monthTotal = useMemo(
+        () => thisMonthExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
+        [thisMonthExpenses]
+      );
+
+      // BarChart 데이터: 전체 기간 청구 vs 본인부담
+      const barData = useMemo(() => {
+        let claim = 0;
+        let self = 0;
+        expenses.forEach((e) => {
+          const amt = Number(e.amount) || 0;
+          if (e.payment === '실비청구') claim += amt;
+          else self += amt;
+        });
+        return [
+          { name: '실비청구', amount: claim, fill: '#6C63FF' },
+          { name: '본인부담', amount: self, fill: '#E91E8C' },
+        ];
+      }, [expenses]);
+
+      // LineChart 데이터: 최근 6개월 월별 합계
+      const lineData = useMemo(() => {
+        const months = [];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(yyyy, mm - i, 1);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          months.push({ key, month: key, total: 0 });
+        }
+        const idx = Object.fromEntries(months.map((m, i) => [m.key, i]));
+        expenses.forEach((e) => {
+          const k = (e.date || '').slice(0, 7);
+          if (idx[k] !== undefined) {
+            months[idx[k]].total += Number(e.amount) || 0;
+          }
+        });
+        return months;
+      }, [expenses, yyyy, mm]);
+
+      // 금액 축 포맷 (만 단위 축약)
+      const tickFormatMoney = (v) => {
+        if (v >= 10000) return `${Math.round(v / 10000)}만`;
+        return v;
+      };
+
+      return (
+        <Card title="📈 요약 대시보드">
+          {/* 차트 1: 이번 달 카테고리별 도넛 */}
+          <div className="mb-6">
+            <div className="text-xs text-textsub mb-2">이번 달 카테고리별 지출</div>
+            <div className="relative">
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={pieData.length > 0 ? pieData : [{ name: '데이터 없음', value: 1 }]}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={pieData.length > 1 ? 2 : 0}
+                    isAnimationActive={false}
+                  >
+                    {(pieData.length > 0 ? pieData : [{ name: '데이터 없음' }]).map((entry, i) => (
+                      <Cell
+                        key={i}
+                        fill={pieData.length > 0 ? CATEGORY_COLORS[i % CATEGORY_COLORS.length] : '#E5E7EB'}
+                      />
+                    ))}
+                  </Pie>
+                  {pieData.length > 0 && (
+                    <Tooltip formatter={(v) => `${formatWithComma(v)}원`} />
+                  )}
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <div className="text-[11px] text-textsub">이번 달 총액</div>
+                <div className="text-base font-bold text-primary">
+                  {formatWithComma(monthTotal)}원
+                </div>
+              </div>
+            </div>
+            {pieData.length > 0 ? (
+              <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center mt-2">
+                {pieData.map((d, i) => (
+                  <div key={d.name} className="flex items-center gap-1 text-xs">
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }}
+                    />
+                    <span className="text-textsub">
+                      {d.name} {formatWithComma(d.value)}원
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center text-xs text-textsub mt-2">
+                이번 달 지출 기록이 없어요.
+              </div>
+            )}
+          </div>
+
+          {/* 차트 2: 청구 vs 본인부담 */}
+          <div className="mb-6">
+            <div className="text-xs text-textsub mb-2">청구 vs 본인부담 (전체 기간)</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={barData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#6B7280' }} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#6B7280' }}
+                  tickFormatter={tickFormatMoney}
+                  width={48}
+                />
+                <Tooltip formatter={(v) => `${formatWithComma(v)}원`} />
+                <Bar dataKey="amount" radius={[8, 8, 0, 0]} isAnimationActive={false}>
+                  {barData.map((entry, i) => (
+                    <Cell key={i} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* 차트 3: 월별 추이 */}
+          <div>
+            <div className="text-xs text-textsub mb-2">월별 지출 추이 (최근 6개월)</div>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={lineData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: '#6B7280' }}
+                  tickFormatter={tickFormatMoney}
+                  width={48}
+                />
+                <Tooltip formatter={(v) => `${formatWithComma(v)}원`} />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  stroke="#E91E8C"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: '#E91E8C' }}
+                  activeDot={{ r: 6 }}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      );
+    }
+
+    function formatWithComma(digitsOnly) {
+      if (!digitsOnly) return '';
+      return Number(digitsOnly).toLocaleString('ko-KR');
+    }
+    function parseMoney(str) {
+      const digits = String(str || '').replace(/[^\d]/g, '');
+      return digits ? Number(digits) : 0;
+    }
+    function handleCommaInput(value, setter) {
+      const digits = String(value).replace(/[^\d]/g, '');
+      setter(formatWithComma(digits));
+    }
+
+    function ExpenseTab() {
+      const [expenses, setExpenses] = useState(() => loadData(STORAGE_KEYS.expenses, []));
+      const [insurances, setInsurances] = useState(() => loadData(STORAGE_KEYS.insurance, []));
+
+      // 지출 입력 폼
+      const [eDate, setEDate] = useState(todayKey());
+      const [eItem, setEItem] = useState('');
+      const [eAmount, setEAmount] = useState('');
+      const [eCategory, setECategory] = useState(EXPENSE_CATEGORIES[0]);
+      const [ePayment, setEPayment] = useState(PAYMENT_METHODS[1]);
+
+      // 보험 입력 폼
+      const [showInsuranceForm, setShowInsuranceForm] = useState(false);
+      const [iCompany, setICompany] = useState('');
+      const [iType, setIType] = useState('');
+      const [iLimit, setILimit] = useState('');
+      const [iReceived, setIReceived] = useState('');
+
+      // 삭제 확인
+      const [deleteExpenseId, setDeleteExpenseId] = useState(null);
+      const [deleteInsuranceId, setDeleteInsuranceId] = useState(null);
+
+      useEffect(() => saveData(STORAGE_KEYS.expenses, expenses), [expenses]);
+      useEffect(() => saveData(STORAGE_KEYS.insurance, insurances), [insurances]);
+
+      function handleSaveExpense() {
+        const amount = parseMoney(eAmount);
+        if (!eItem.trim() || amount <= 0) return;
+        const entry = {
+          id: generateId(),
+          date: eDate,
+          item: eItem.trim(),
+          amount,
+          category: eCategory,
+          payment: ePayment,
+        };
+        setExpenses((prev) => [entry, ...prev]);
+        setEItem('');
+        setEAmount('');
+      }
+
+      function handleSaveInsurance() {
+        const limit = parseMoney(iLimit);
+        const received = parseMoney(iReceived);
+        if (!iCompany.trim() || limit <= 0) return;
+        const entry = {
+          id: generateId(),
+          company: iCompany.trim(),
+          type: iType.trim(),
+          limit,
+          received,
+        };
+        setInsurances((prev) => [entry, ...prev]);
+        setICompany('');
+        setIType('');
+        setILimit('');
+        setIReceived('');
+        setShowInsuranceForm(false);
+      }
+
+      function handleDeleteExpense() {
+        setExpenses((prev) => prev.filter((x) => x.id !== deleteExpenseId));
+        setDeleteExpenseId(null);
+      }
+      function handleDeleteInsurance() {
+        setInsurances((prev) => prev.filter((x) => x.id !== deleteInsuranceId));
+        setDeleteInsuranceId(null);
+      }
+
+      const sortedExpenses = useMemo(
+        () => [...expenses].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+        [expenses]
+      );
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          {/* 5-1. 병원비 입력 */}
+          <Card title="💰 병원비 입력">
+            <label className="block text-xs text-textsub mb-1">날짜</label>
+            <input
+              type="date"
+              value={eDate}
+              onChange={(e) => setEDate(e.target.value)}
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+            />
+
+            <label className="block text-xs text-textsub mb-1">항목명</label>
+            <input
+              type="text"
+              value={eItem}
+              onChange={(e) => setEItem(e.target.value)}
+              placeholder="예) 외래 진료, CT 검사"
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain placeholder:text-textsub/70"
+            />
+
+            <label className="block text-xs text-textsub mb-1">금액 (원)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={eAmount}
+              onChange={(e) => handleCommaInput(e.target.value, setEAmount)}
+              placeholder="0"
+              className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain placeholder:text-textsub/70 text-right"
+            />
+
+            <label className="block text-xs text-textsub mb-1">카테고리</label>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {EXPENSE_CATEGORIES.map((c) => {
+                const active = eCategory === c;
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setECategory(c)}
+                    className={`no-select rounded-full px-3 py-2 text-sm
+                                ${active
+                                  ? 'bg-primary text-white font-semibold'
+                                  : 'bg-softbg text-textsub border border-primary/20'}`}
+                    style={{ minHeight: 36 }}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="block text-xs text-textsub mb-1">결제방법</label>
+            <div className="flex gap-2 mb-4">
+              {PAYMENT_METHODS.map((p) => {
+                const active = ePayment === p;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setEPayment(p)}
+                    className={`no-select flex-1 rounded-full px-3 py-2 text-sm
+                                ${active
+                                  ? 'bg-secondary text-white font-semibold'
+                                  : 'bg-softbg text-textsub border border-secondary/30'}`}
+                    style={{ minHeight: 36 }}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end">
+              <PrimaryButton
+                onClick={handleSaveExpense}
+                disabled={!eItem.trim() || parseMoney(eAmount) <= 0}
+              >
+                지출 저장
+              </PrimaryButton>
+            </div>
+          </Card>
+
+          {/* 지출 리스트 */}
+          <Card title="📒 저장된 지출">
+            {sortedExpenses.length === 0 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                아직 저장된 지출이 없어요.
+              </div>
+            ) : (
+              <ul className="divide-y divide-primary/10">
+                {sortedExpenses.map((ex) => (
+                  <li key={ex.id} className="py-3 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-textsub mb-0.5">
+                        {ex.date} · {ex.category} · {ex.payment}
+                      </div>
+                      <div className="text-sm text-textmain truncate">{ex.item}</div>
+                    </div>
+                    <div className="text-sm font-semibold text-primary whitespace-nowrap">
+                      {formatWithComma(ex.amount)}원
+                    </div>
+                    <button
+                      onClick={() => setDeleteExpenseId(ex.id)}
+                      aria-label="삭제"
+                      className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full"
+                      style={{ minHeight: 40, minWidth: 40 }}
+                    >
+                      🗑️
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* 5-2. 보험 / 실비 한도 */}
+          <Card title="🏦 보험 / 실비 한도">
+            {insurances.length === 0 ? (
+              <div className="py-4 text-center text-sm text-textsub">
+                등록된 보험이 없어요.
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {insurances.map((ins) => {
+                  const limit = Number(ins.limit) || 0;
+                  const received = Number(ins.received) || 0;
+                  const remaining = Math.max(limit - received, 0);
+                  const remainingPct = limit > 0 ? (remaining / limit) * 100 : 0;
+                  let barColor = '#10B981';
+                  if (remainingPct < 30) barColor = '#EF4444';
+                  else if (remainingPct < 70) barColor = '#F59E0B';
+                  return (
+                    <li key={ins.id} className="rounded-xl border border-primary/10 p-3">
+                      <div className="flex items-start gap-2 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-textmain truncate">
+                            {ins.company}
+                            {ins.type ? <span className="text-textsub font-normal"> · {ins.type}</span> : null}
+                          </div>
+                          <div className="text-xs text-textsub mt-0.5">
+                            한도 {formatWithComma(limit)}원 · 수령 {formatWithComma(received)}원
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setDeleteInsuranceId(ins.id)}
+                          aria-label="삭제"
+                          className="text-base no-select active:opacity-70 flex items-center justify-center rounded-full"
+                          style={{ minHeight: 36, minWidth: 36 }}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                      <div className="h-2.5 w-full rounded-full bg-softbg overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(Math.max(remainingPct, 0), 100)}%`,
+                            backgroundColor: barColor,
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-between mt-1 text-[11px] text-textsub">
+                        <span>잔여 {formatWithComma(remaining)}원</span>
+                        <span style={{ color: barColor }}>
+                          {remainingPct.toFixed(1)}% 남음
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {showInsuranceForm ? (
+              <div className="mt-4 space-y-3 rounded-xl border border-primary/20 p-3 bg-softbg">
+                <div>
+                  <label className="block text-xs text-textsub mb-1">보험사명</label>
+                  <input
+                    type="text"
+                    value={iCompany}
+                    onChange={(e) => setICompany(e.target.value)}
+                    placeholder="예) OO생명"
+                    className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-textsub mb-1">보험 종류</label>
+                  <input
+                    type="text"
+                    value={iType}
+                    onChange={(e) => setIType(e.target.value)}
+                    placeholder="예) 실손, 암보험"
+                    className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-textsub mb-1">총 한도 금액 (원)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={iLimit}
+                    onChange={(e) => handleCommaInput(e.target.value, setILimit)}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70 text-right"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-textsub mb-1">이미 수령한 금액 (원)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={iReceived}
+                    onChange={(e) => handleCommaInput(e.target.value, setIReceived)}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70 text-right"
+                  />
+                </div>
+                <div className="flex gap-2 justify-end pt-1">
+                  <GhostButton onClick={() => {
+                    setShowInsuranceForm(false);
+                    setICompany(''); setIType(''); setILimit(''); setIReceived('');
+                  }}>취소</GhostButton>
+                  <PrimaryButton
+                    onClick={handleSaveInsurance}
+                    disabled={!iCompany.trim() || parseMoney(iLimit) <= 0}
+                  >
+                    보험 추가
+                  </PrimaryButton>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-end mt-3">
+                <GhostButton onClick={() => setShowInsuranceForm(true)}>
+                  + 보험 추가
+                </GhostButton>
+              </div>
+            )}
+          </Card>
+
+          {/* 5-3. 요약 대시보드 */}
+          <ExpenseDashboard expenses={expenses} />
+
+          <ConfirmDialog
+            open={!!deleteExpenseId}
+            title="지출을 삭제할까요?"
+            message="삭제한 지출 내역은 복구할 수 없어요."
+            onConfirm={handleDeleteExpense}
+            onCancel={() => setDeleteExpenseId(null)}
+          />
+          <ConfirmDialog
+            open={!!deleteInsuranceId}
+            title="보험 정보를 삭제할까요?"
+            message="삭제한 보험 한도 정보는 복구할 수 없어요."
+            onConfirm={handleDeleteInsurance}
+            onCancel={() => setDeleteInsuranceId(null)}
+          />
+        </div>
+      );
+    }
+
+    // ========== Capacitor 네이티브 브릿지 헬퍼 ==========
+    // 브라우저(PWA)에선 window.Capacitor가 없으므로 모든 호출에 안전 가드.
+    const Caps = typeof window !== 'undefined' ? window.Capacitor : null;
+    const isNativeApp = !!(Caps && Caps.isNativePlatform && Caps.isNativePlatform());
+    const LocalNotifications = Caps && Caps.Plugins && Caps.Plugins.LocalNotifications;
+    const Filesystem = Caps && Caps.Plugins && Caps.Plugins.Filesystem;
+    const Share = Caps && Caps.Plugins && Caps.Plugins.Share;
+    const PushNotifications = Caps && Caps.Plugins && Caps.Plugins.PushNotifications;
+
+    // 푸시 알림 등록 (옵트인 시에만 호출)
+    // 실제 서버에서 메시지를 받으려면 Firebase(google-services.json, Android) +
+    // APNs Key/Provisioning Profile(iOS) + 백엔드 서버가 필요합니다.
+    // 여기서는 토큰 발급 + 수신 핸들러만 wiring 하고, 토큰을 igt_push_token에 보관합니다.
+    async function registerForPush() {
+      if (!isNativeApp || !PushNotifications) return { ok: false, reason: 'not-native' };
+      try {
+        const perm = await PushNotifications.requestPermissions();
+        if (perm.receive !== 'granted') {
+          return { ok: false, reason: 'permission-denied' };
+        }
+        await PushNotifications.register();
+        // 리스너는 한 번만 등록되도록 가드
+        if (!window.__igtPushWired) {
+          window.__igtPushWired = true;
+          PushNotifications.addListener('registration', (token) => {
+            try {
+              localStorage.setItem('igt_push_token', token.value);
+              console.info('[push] token:', token.value);
+            } catch {}
+          });
+          PushNotifications.addListener('registrationError', (err) => {
+            console.warn('[push] registrationError', err);
+          });
+          PushNotifications.addListener('pushNotificationReceived', (n) => {
+            console.info('[push] received', n);
+          });
+          PushNotifications.addListener('pushNotificationActionPerformed', (a) => {
+            console.info('[push] tapped', a);
+          });
+        }
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, reason: 'error', error: e?.message };
+      }
+    }
+
+    async function ensureNotificationPermission() {
+      if (!isNativeApp || !LocalNotifications) return false;
+      const cur = await LocalNotifications.checkPermissions();
+      if (cur.display === 'granted') return true;
+      const req = await LocalNotifications.requestPermissions();
+      return req.display === 'granted';
+    }
+
+    // 스케줄에 대한 로컬 알림 ID는 결정적으로 생성 (재예약 시 같은 ID로 덮어쓰기)
+    // Capacitor LocalNotifications id는 32-bit 정수만 허용하므로 hash → 양의 정수.
+    function reminderIdForSchedule(scheduleId) {
+      let h = 0;
+      const str = 'sched-' + String(scheduleId);
+      for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+      return Math.abs(h) % 2_000_000_000;
+    }
+
+    async function scheduleCycleReminder(schedule) {
+      // 시작일 09:00 + 시작일 1일 전 21:00 두 개 예약
+      if (!isNativeApp || !LocalNotifications) return { ok: false, reason: 'not-native' };
+      const granted = await ensureNotificationPermission();
+      if (!granted) return { ok: false, reason: 'permission-denied' };
+
+      const baseId = reminderIdForSchedule(schedule.id);
+      const start = new Date(schedule.startDate + 'T09:00:00');
+      const dayBefore = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+      dayBefore.setHours(21, 0, 0, 0);
+      const meta = (typeof CATEGORY_META !== 'undefined' && CATEGORY_META[schedule.category]) ||
+                   { emoji: '💊', label: '' };
+      const items = [];
+      // 하루 전 알림은 미래일 때만 예약
+      const now = new Date();
+      if (dayBefore.getTime() > now.getTime()) {
+        items.push({
+          id: baseId,
+          title: `내일 ${schedule.cycleNumber}차 시작`,
+          body: `${meta.emoji} ${schedule.regimen} · 입원/투여 ${schedule.infusionDays}일`,
+          schedule: { at: dayBefore, allowWhileIdle: true },
+          smallIcon: 'ic_launcher',
+          extra: { scheduleId: schedule.id, kind: 'day-before' },
+        });
+      }
+      if (start.getTime() > now.getTime()) {
+        items.push({
+          id: baseId + 1,
+          title: `오늘 ${schedule.cycleNumber}차 시작`,
+          body: `${meta.emoji} ${schedule.regimen} · 화이팅 🎗️`,
+          schedule: { at: start, allowWhileIdle: true },
+          smallIcon: 'ic_launcher',
+          extra: { scheduleId: schedule.id, kind: 'start' },
+        });
+      }
+      if (items.length === 0) return { ok: false, reason: 'past' };
+      try {
+        await LocalNotifications.schedule({ notifications: items });
+        return { ok: true, count: items.length };
+      } catch (e) {
+        console.warn('schedule failed', e);
+        return { ok: false, reason: 'error' };
+      }
+    }
+
+    async function cancelCycleReminder(scheduleId) {
+      if (!isNativeApp || !LocalNotifications) return;
+      const baseId = reminderIdForSchedule(scheduleId);
+      try {
+        await LocalNotifications.cancel({
+          notifications: [{ id: baseId }, { id: baseId + 1 }],
+        });
+      } catch (e) {
+        console.warn('cancel failed', e);
+      }
+    }
+
+    // ========== 약 복용 알림 ==========
+    // weekday: 0=일 ~ 6=토 (JavaScript getDay() 컨벤션).
+    // Capacitor의 weekday는 1(일)~7(토)이므로 +1 변환.
+    const MED_REMINDER_KEY = 'igt_medreminders';
+
+    function medReminderIdFor(reminderId, weekday /* 0-6 or null=daily */) {
+      let h = 0;
+      const str = `med-${reminderId}-${weekday === null || weekday === undefined ? 'd' : weekday}`;
+      for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+      return Math.abs(h) % 2_000_000_000;
+    }
+
+    async function scheduleMedReminder(r) {
+      if (!isNativeApp || !LocalNotifications) return { ok: false, reason: 'not-native' };
+      if (!r || r.enabled === false) return { ok: false, reason: 'disabled' };
+      const granted = await ensureNotificationPermission();
+      if (!granted) return { ok: false, reason: 'permission-denied' };
+
+      const [hStr, mStr] = String(r.time || '09:00').split(':');
+      const hour = Math.max(0, Math.min(23, Number(hStr) || 0));
+      const minute = Math.max(0, Math.min(59, Number(mStr) || 0));
+
+      const weekdays = Array.isArray(r.weekdays) && r.weekdays.length > 0
+        ? r.weekdays
+        : [0, 1, 2, 3, 4, 5, 6];
+      const isDaily = weekdays.length === 7;
+
+      const items = [];
+      const title = `💊 ${r.name || '약 복용 시간'}`;
+      const body = '오늘도 잊지 말고 복용해주세요.';
+
+      if (isDaily) {
+        items.push({
+          id: medReminderIdFor(r.id, null),
+          title,
+          body,
+          schedule: { on: { hour, minute }, every: 'day', allowWhileIdle: true },
+          smallIcon: 'ic_launcher',
+          extra: { medReminderId: r.id, kind: 'med' },
+        });
+      } else {
+        weekdays.forEach((dow) => {
+          items.push({
+            id: medReminderIdFor(r.id, dow),
+            title,
+            body,
+            schedule: {
+              on: { weekday: dow + 1, hour, minute }, // Capacitor: 1=Sun ~ 7=Sat
+              every: 'week',
+              allowWhileIdle: true,
+            },
+            smallIcon: 'ic_launcher',
+            extra: { medReminderId: r.id, kind: 'med', weekday: dow },
+          });
+        });
+      }
+
+      try {
+        // 같은 ID는 자동으로 덮어쓰기되지만, 다른 요일 조합으로 변경된 경우를 위해 먼저 cancel.
+        await cancelMedReminder(r.id);
+        await LocalNotifications.schedule({ notifications: items });
+        return { ok: true, count: items.length };
+      } catch (e) {
+        console.warn('med schedule failed', e);
+        return { ok: false, reason: 'error' };
+      }
+    }
+
+    async function cancelMedReminder(reminderId) {
+      if (!isNativeApp || !LocalNotifications) return;
+      const ids = [medReminderIdFor(reminderId, null)];
+      for (let i = 0; i < 7; i++) ids.push(medReminderIdFor(reminderId, i));
+      try {
+        await LocalNotifications.cancel({
+          notifications: ids.map((id) => ({ id })),
+        });
+      } catch (e) {
+        console.warn('med cancel failed', e);
+      }
+    }
+
+    function weekdaysLabel(arr) {
+      if (!arr || arr.length === 0) return '꺼짐';
+      if (arr.length === 7) return '매일';
+      if (arr.length === 5 && [1, 2, 3, 4, 5].every((d) => arr.includes(d))) return '평일';
+      if (arr.length === 2 && arr.includes(0) && arr.includes(6)) return '주말';
+      const KOR = ['일', '월', '화', '수', '목', '금', '토'];
+      return [...arr].sort((a, b) => a - b).map((d) => KOR[d]).join('·');
+    }
+
+    function MedReminderCard() {
+      const [reminders, setReminders] = useState(() => loadData(MED_REMINDER_KEY, []));
+      const [showForm, setShowForm] = useState(false);
+      const [name, setName] = useState('');
+      const [time, setTime] = useState('09:00');
+      const [weekdays, setWeekdays] = useState([0, 1, 2, 3, 4, 5, 6]);
+      const [msg, setMsg] = useState('');
+      const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+      useEffect(() => {
+        saveData(MED_REMINDER_KEY, reminders);
+      }, [reminders]);
+
+      function showMsg(t, ms = 4000) {
+        setMsg(t);
+        setTimeout(() => setMsg(''), ms);
+      }
+
+      function toggleWeekday(d) {
+        setWeekdays((prev) =>
+          prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b)
+        );
+      }
+
+      function resetForm() {
+        setName('');
+        setTime('09:00');
+        setWeekdays([0, 1, 2, 3, 4, 5, 6]);
+        setShowForm(false);
+      }
+
+      async function handleAdd() {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        if (weekdays.length === 0) {
+          showMsg('요일을 하나 이상 선택해주세요.');
+          return;
+        }
+        const r = {
+          id: generateId(),
+          name: trimmed,
+          time,
+          weekdays: [...weekdays].sort((a, b) => a - b),
+          enabled: true,
+          createdAt: new Date().toISOString(),
+        };
+        setReminders((prev) => [r, ...prev]);
+        resetForm();
+
+        const res = await scheduleMedReminder(r);
+        if (res.ok) showMsg(`🔔 ${trimmed} 알림 ${res.count}건 예약됨`);
+        else if (res.reason === 'permission-denied') showMsg('알림 권한이 거부됐어요. 시스템 설정에서 허용해주세요.');
+        else if (res.reason === 'not-native') showMsg('알림은 설치된 앱에서만 동작해요. 지금은 등록만 저장됐어요.');
+      }
+
+      async function handleToggle(r) {
+        const next = !r.enabled;
+        const updated = { ...r, enabled: next };
+        setReminders((prev) => prev.map((x) => (x.id === r.id ? updated : x)));
+        if (next) {
+          const res = await scheduleMedReminder(updated);
+          if (res.ok) showMsg(`🔔 ${r.name} 알림 켜짐 (${res.count}건)`);
+          else if (res.reason === 'permission-denied') showMsg('권한이 거부됐어요.');
+        } else {
+          await cancelMedReminder(r.id);
+          showMsg(`🔕 ${r.name} 알림 꺼짐`);
+        }
+      }
+
+      async function handleDelete() {
+        const id = confirmDeleteId;
+        await cancelMedReminder(id);
+        setReminders((prev) => prev.filter((x) => x.id !== id));
+        setConfirmDeleteId(null);
+      }
+
+      const KOR_DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+      return (
+        <Card title="💊 약 복용 알림">
+          <div className="text-xs text-textsub leading-relaxed mb-3">
+            {isNativeApp
+              ? '정해진 시간마다 약 복용을 알려드려요. 원하는 알림만 켜고 끄세요.'
+              : '⚠️ 알림은 설치된 앱(iOS/Android)에서만 울려요. 지금은 등록만 가능합니다.'}
+          </div>
+
+          {reminders.length === 0 ? (
+            <div className="py-3 text-center text-sm text-textsub">
+              아직 등록된 알림이 없어요.
+            </div>
+          ) : (
+            <ul className="space-y-2 mb-3">
+              {reminders.map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-xl border border-primary/15 p-3 flex items-center gap-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-textmain truncate">
+                      {r.name}
+                    </div>
+                    <div className="text-xs text-textsub mt-0.5">
+                      {r.time} · {weekdaysLabel(r.weekdays)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleToggle(r)}
+                    aria-label="알림 토글"
+                    className={`relative inline-flex shrink-0 rounded-full transition-colors no-select
+                                ${r.enabled ? 'bg-primary' : 'bg-gray-300'}`}
+                    style={{ width: 44, height: 26, minHeight: 26 }}
+                  >
+                    <span
+                      className="bg-white rounded-full shadow"
+                      style={{
+                        width: 20,
+                        height: 20,
+                        margin: 3,
+                        transform: r.enabled ? 'translateX(18px)' : 'translateX(0)',
+                        transition: 'transform 0.15s',
+                      }}
+                    />
+                  </button>
+                  <button
+                    onClick={() => setConfirmDeleteId(r.id)}
+                    aria-label="삭제"
+                    className="text-base no-select active:opacity-70 flex items-center justify-center rounded-full"
+                    style={{ minHeight: 36, minWidth: 36 }}
+                  >
+                    🗑️
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {showForm ? (
+            <div className="space-y-3 rounded-xl border border-primary/20 p-3 bg-softbg">
+              <div>
+                <label className="block text-xs text-textsub mb-1">약 이름</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="예) 타이레놀, 항암제 (경구)"
+                  className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain placeholder:text-textsub/70"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-textsub mb-1">알림 시간</label>
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  className="w-full rounded-xl border border-primary/20 bg-white px-3 py-3 text-textmain"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-textsub mb-1">반복 요일</label>
+                <div className="flex gap-2 mb-2 flex-wrap">
+                  <button
+                    onClick={() => setWeekdays([0, 1, 2, 3, 4, 5, 6])}
+                    className="rounded-full px-3 py-1.5 text-xs no-select bg-white border border-primary/20 text-textmain active:bg-primary/5"
+                  >
+                    매일
+                  </button>
+                  <button
+                    onClick={() => setWeekdays([1, 2, 3, 4, 5])}
+                    className="rounded-full px-3 py-1.5 text-xs no-select bg-white border border-primary/20 text-textmain active:bg-primary/5"
+                  >
+                    평일
+                  </button>
+                  <button
+                    onClick={() => setWeekdays([0, 6])}
+                    className="rounded-full px-3 py-1.5 text-xs no-select bg-white border border-primary/20 text-textmain active:bg-primary/5"
+                  >
+                    주말
+                  </button>
+                </div>
+                <div className="flex gap-1">
+                  {KOR_DAYS.map((d, i) => {
+                    const active = weekdays.includes(i);
+                    const accent = i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : '';
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => toggleWeekday(i)}
+                        className={`flex-1 rounded-lg py-2 text-xs font-semibold no-select
+                                    ${active
+                                      ? 'bg-primary text-white'
+                                      : `bg-white border border-primary/20 ${accent || 'text-textsub'}`}`}
+                        style={{ minHeight: 36 }}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <GhostButton onClick={resetForm}>취소</GhostButton>
+                <PrimaryButton
+                  onClick={handleAdd}
+                  disabled={!name.trim() || weekdays.length === 0}
+                >
+                  알림 추가
+                </PrimaryButton>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <GhostButton onClick={() => setShowForm(true)}>+ 약 복용 알림 추가</GhostButton>
+            </div>
+          )}
+
+          {msg && (
+            <div className="mt-3 text-xs text-textmain bg-primary/5 border border-primary/15 rounded-lg px-3 py-2 leading-relaxed">
+              {msg}
+            </div>
+          )}
+
+          <ConfirmDialog
+            open={!!confirmDeleteId}
+            title="알림을 삭제할까요?"
+            message="삭제하면 예약된 알림도 함께 취소돼요."
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmDeleteId(null)}
+          />
+        </Card>
+      );
+    }
+
+    // ========== 백업 / 복원 ==========
+    // localStorage 12개 키 + 부가 설정을 JSON 한 묶음으로 export/import.
+    const BACKUP_KEYS = [
+      'igt_cheering', 'igt_mood', 'igt_treatment', 'igt_sideeffects',
+      'igt_medications', 'igt_vitals', 'igt_meals', 'igt_diary',
+      'igt_expenses', 'igt_insurance', 'igt_profile', 'igt_schedule',
+      'igt_notify_cycle', 'igt_medreminders',
+    ];
+
+    function buildBackupPayload() {
+      const data = {};
+      BACKUP_KEYS.forEach((k) => {
+        try {
+          const raw = localStorage.getItem(k);
+          data[k] = raw === null ? null : JSON.parse(raw);
+        } catch {
+          data[k] = null;
+        }
+      });
+      return {
+        app: 'igeonaeja-oneuldo',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        data,
+      };
+    }
+
+    function applyBackupPayload(payload) {
+      if (!payload || typeof payload !== 'object' || !payload.data) {
+        throw new Error('형식이 올바르지 않은 백업 파일이에요.');
+      }
+      let restored = 0;
+      BACKUP_KEYS.forEach((k) => {
+        if (k in payload.data) {
+          const v = payload.data[k];
+          if (v === null || v === undefined) {
+            localStorage.removeItem(k);
+          } else {
+            localStorage.setItem(k, JSON.stringify(v));
+          }
+          restored += 1;
+        }
+      });
+      return restored;
+    }
+
+    function backupFilename() {
+      const d = new Date();
+      const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+      return `igt_backup_${stamp}.json`;
+    }
+
+    // 네이티브: Filesystem에 쓴 뒤 Share, 브라우저: <a download> 다운로드
+    async function exportBackup() {
+      const payload = buildBackupPayload();
+      const json = JSON.stringify(payload, null, 2);
+      const filename = backupFilename();
+
+      if (isNativeApp && Filesystem && Share) {
+        const writeRes = await Filesystem.writeFile({
+          path: filename,
+          data: json,
+          directory: 'CACHE',
+          encoding: 'utf8',
+        });
+        const fileUrl = writeRes.uri;
+        try {
+          await Share.share({
+            title: '이겨내자 오늘도 백업',
+            text: '항암 다이어리 백업 파일을 공유합니다.',
+            url: fileUrl,
+            dialogTitle: '백업 공유',
+          });
+          return { ok: true, mode: 'share', filename };
+        } catch (e) {
+          // 사용자가 공유창을 닫아도 파일은 캐시에 남아있음
+          return { ok: true, mode: 'cached', filename, uri: fileUrl };
+        }
+      }
+
+      // 브라우저 fallback
+      const blob = new Blob([json], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      return { ok: true, mode: 'download', filename };
+    }
+
+    function importBackupFromText(text) {
+      const payload = JSON.parse(text);
+      if (payload.app && payload.app !== 'igeonaeja-oneuldo') {
+        throw new Error('다른 앱에서 만든 백업 파일이에요.');
+      }
+      return applyBackupPayload(payload);
+    }
+
+    // 복원 직후 / 필요 시 호출. localStorage에서 직접 읽어 enabled=true 항목을 모두 재예약.
+    // scheduleXXX 헬퍼들이 cancel-then-schedule 이라 idempotent (중복 알림 안 생김).
+    async function rescheduleAllReminders() {
+      if (!isNativeApp || !LocalNotifications) return { ok: false, reason: 'not-native' };
+      const granted = await ensureNotificationPermission();
+      if (!granted) return { ok: false, reason: 'permission-denied' };
+
+      let medCount = 0;
+      let cycleCount = 0;
+
+      // 약 복용 알림
+      const meds = loadData(MED_REMINDER_KEY, []);
+      for (const r of meds) {
+        if (r && r.enabled) {
+          const res = await scheduleMedReminder(r);
+          if (res.ok) medCount += res.count;
+        }
+      }
+
+      // 사이클 알림 (사용자가 토글 켜뒀을 때만)
+      const cycleEnabled = loadData('igt_notify_cycle', false);
+      if (cycleEnabled) {
+        const schedules = loadData(SCHEDULE_STORAGE_KEY, []);
+        for (const s of schedules) {
+          const res = await scheduleCycleReminder(s);
+          if (res.ok) cycleCount += res.count;
+        }
+      }
+
+      return { ok: true, medCount, cycleCount };
+    }
+
+    function BackupCard() {
+      const [busy, setBusy] = useState(false);
+      const [msg, setMsg] = useState('');
+      const [confirmReload, setConfirmReload] = useState(false);
+      const fileInputRef = useRef(null);
+
+      function showMsg(text, ms = 4000) {
+        setMsg(text);
+        setTimeout(() => setMsg(''), ms);
+      }
+
+      async function handleExport() {
+        setBusy(true);
+        try {
+          const r = await exportBackup();
+          if (r.mode === 'share') showMsg(`📤 ${r.filename} 공유 시트에서 카톡/메일/AirDrop으로 보내세요.`);
+          else if (r.mode === 'download') showMsg(`💾 ${r.filename} 다운로드 시작`);
+          else showMsg(`💾 ${r.filename} 임시 폴더에 저장됨`);
+        } catch (e) {
+          showMsg(`❌ 백업 실패: ${e.message || e}`);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function handleImportFile(file) {
+        if (!file) return;
+        setBusy(true);
+        try {
+          const text = await file.text();
+          const restored = importBackupFromText(text);
+          let extra = '';
+          if (isNativeApp) {
+            try {
+              const r = await rescheduleAllReminders();
+              if (r.ok) {
+                const total = (r.medCount || 0) + (r.cycleCount || 0);
+                if (total > 0) extra = ` · 알림 ${total}건 자동 재예약`;
+              } else if (r.reason === 'permission-denied') {
+                extra = ' (알림 권한 거부 → 재예약 안 됨)';
+              }
+            } catch (e) {
+              console.warn('reschedule after import failed', e);
+            }
+          }
+          showMsg(`✅ ${restored}개 항목 복원${extra}. 잠시 후 새로고침합니다.`);
+          setConfirmReload(true);
+        } catch (e) {
+          showMsg(`❌ 복원 실패: ${e.message || e}`);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      return (
+        <Card title="💾 백업 / 복원">
+          <div className="text-xs text-textsub leading-relaxed mb-3">
+            모든 기록을 JSON 한 파일로 저장해 카톡·메일·다른 기기로 옮길 수 있어요.
+            앱 삭제 전 꼭 백업해두세요.
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <PrimaryButton onClick={handleExport} disabled={busy}>
+              {isNativeApp ? '📤 백업 공유' : '💾 백업 다운로드'}
+            </PrimaryButton>
+            <GhostButton onClick={() => fileInputRef.current?.click()}>
+              📥 백업 복원
+            </GhostButton>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                handleImportFile(file);
+                e.target.value = '';
+              }}
+            />
+          </div>
+
+          {msg && (
+            <div className="mt-3 text-xs text-textmain bg-primary/5 border border-primary/15 rounded-lg px-3 py-2 leading-relaxed">
+              {msg}
+            </div>
+          )}
+
+          <ConfirmDialog
+            open={confirmReload}
+            title="복원 완료. 화면을 새로고침할까요?"
+            message="새로고침해야 변경된 데이터가 모두 반영돼요."
+            onConfirm={() => {
+              setConfirmReload(false);
+              location.reload();
+            }}
+            onCancel={() => setConfirmReload(false)}
+          />
+        </Card>
+      );
+    }
+
+    // ========== 탭 2: 치료 관리 (스케줄 입력) ==========
+    // 신규 키. 기존 STORAGE_KEYS(11개)는 그대로 유지하기 위해 별도 상수로 분리.
+    const SCHEDULE_STORAGE_KEY = 'igt_schedule';
+
+    const CATEGORY_META = {
+      colorectal:  { emoji: '🎗️', label: '대장암' },
+      breast:      { emoji: '🎀', label: '유방암' },
+      lung:        { emoji: '🫁', label: '폐암' },
+      gastric:     { emoji: '🍚', label: '위암' },
+      pancreatic:  { emoji: '🟡', label: '췌장암/담도암' },
+      hematologic: { emoji: '🩸', label: '혈액암' },
+      gyne:        { emoji: '🌸', label: '난소암/자궁암' },
+      immune:      { emoji: '🛡️', label: '면역항암제' },
+      custom:      { emoji: '✏️', label: '직접 입력' },
+    };
+
+    const SCHEDULE_DISCLAIMER =
+      '※ 본 정보는 기록 보조용이며 의학적 판단을 대체하지 않습니다. 실제 투여 일정은 담당 의료진의 지시를 따르세요.';
+
+    function RegimenScheduleModal({ open, onClose, onSave }) {
+      const [step, setStep] = useState(1);
+      const [categoryKey, setCategoryKey] = useState(null);
+      const [regimen, setRegimen] = useState(null);
+
+      // 일정 입력 폼
+      const [startDate, setStartDate] = useState(todayKey());
+      const [infusionDays, setInfusionDays] = useState(1);
+      const [cycleDays, setCycleDays] = useState(14);
+      const [cycleNumber, setCycleNumber] = useState(1);
+      const [memo, setMemo] = useState('');
+
+      // 모달 열릴 때마다 상태 초기화
+      useEffect(() => {
+        if (open) {
+          setStep(1);
+          setCategoryKey(null);
+          setRegimen(null);
+          setStartDate(todayKey());
+          setInfusionDays(1);
+          setCycleDays(14);
+          setCycleNumber(1);
+          setMemo('');
+        }
+      }, [open]);
+
+      if (!open) return null;
+
+      const categoryInfo = categoryKey ? REGIMEN_PRESETS[categoryKey] : null;
+
+      function selectCategory(key) {
+        setCategoryKey(key);
+        setStep(2);
+      }
+      function selectRegimen(r) {
+        setRegimen(r);
+        setInfusionDays(Number(r.infusionDays) || 1);
+        setCycleDays(Number(r.cycleDays) || 14);
+        setStep(3);
+      }
+      function goBack() {
+        if (step === 3) setStep(2);
+        else if (step === 2) {
+          setStep(1);
+          setCategoryKey(null);
+          setRegimen(null);
+        }
+      }
+      function handleSave() {
+        if (!regimen || !categoryKey) return;
+        const inf = Math.max(0, Math.min(7, Number(infusionDays) || 0));
+        const cyc = Math.max(7, Math.min(42, Number(cycleDays) || 14));
+        const num = Math.max(1, Number(cycleNumber) || 1);
+        const entry = {
+          id: generateId(),
+          regimen: regimen.name,
+          category: categoryKey,
+          startDate,
+          infusionDays: inf,
+          cycleDays: cyc,
+          cycleNumber: num,
+          memo: memo.trim(),
+        };
+        onSave(entry);
+      }
+
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+          style={{ touchAction: 'none' }}
+          onClick={onClose}
+        >
+          <div
+            className="bg-white w-full max-w-[480px] rounded-t-2xl sm:rounded-2xl flex flex-col"
+            style={{ maxHeight: '90vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="px-4 pt-4 pb-3 flex items-center justify-between border-b border-primary/10">
+              <button
+                onClick={step > 1 ? goBack : onClose}
+                className="text-sm text-primary no-select px-2 py-1"
+                style={{ minHeight: 36, minWidth: 56 }}
+              >
+                {step > 1 ? '← 이전' : '취소'}
+              </button>
+              <div className="text-sm font-bold text-textmain">
+                항암 스케줄 추가 <span className="text-textsub font-normal">({step}/3)</span>
+              </div>
+              <button
+                onClick={onClose}
+                aria-label="닫기"
+                className="text-textsub no-select"
+                style={{ minHeight: 36, minWidth: 36 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 본문 */}
+            <div
+              className="flex-1 overflow-y-auto scroll-area px-4 py-4"
+              style={{ minHeight: 0 }}
+            >
+              {/* 1단계: 암종 선택 */}
+              {step === 1 && (
+                <>
+                  <div className="text-sm text-textmain font-semibold mb-1">암종을 선택해주세요</div>
+                  <div className="text-xs text-textsub mb-4">
+                    선택한 암종의 일반적인 항암 레지멘이 나타나요.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {Object.entries(REGIMEN_PRESETS).map(([key, cat]) => {
+                      const meta = CATEGORY_META[key] || { emoji: '💊', label: cat.label };
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => selectCategory(key)}
+                          className="rounded-2xl bg-softbg border border-primary/15 p-3 text-left no-select active:bg-primary/5"
+                          style={{ minHeight: 100 }}
+                        >
+                          <div className="text-3xl mb-1 leading-none">{meta.emoji}</div>
+                          <div className="text-sm font-semibold text-textmain">
+                            {cat.label}
+                          </div>
+                          <div className="text-[11px] text-textsub mt-0.5">
+                            {cat.regimens.length}개 레지멘
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* 2단계: 레지멘 선택 */}
+              {step === 2 && categoryInfo && (
+                <>
+                  <div className="text-sm text-textmain font-semibold mb-1">
+                    {CATEGORY_META[categoryKey]?.emoji} {categoryInfo.label} 레지멘
+                  </div>
+                  <div className="text-xs text-textsub mb-4">사용하시는 레지멘을 골라주세요.</div>
+                  <ul className="space-y-2">
+                    {categoryInfo.regimens.map((r, i) => {
+                      const isHospital = (Number(r.infusionDays) || 0) >= 2;
+                      const isOral = r.type === 'oral';
+                      const isCustom = r.type === 'custom';
+                      const tag = isCustom
+                        ? '직접 입력'
+                        : isOral
+                        ? '경구'
+                        : isHospital
+                        ? '입원형'
+                        : '외래형';
+                      return (
+                        <li key={i}>
+                          <div className="rounded-xl border border-primary/15 bg-white p-3 flex items-start gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-textmain text-[15px] break-words">
+                                {r.name}
+                              </div>
+                              <div className="text-xs text-textsub mt-0.5">
+                                {r.cycleDays}일 주기 · {r.infusionDays}일 투여 · ({tag})
+                              </div>
+                              {r.desc && (
+                                <div className="text-xs text-textmain/80 mt-1 leading-relaxed">
+                                  {r.desc}
+                                </div>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => selectRegimen(r)}
+                              className="rounded-full bg-primary text-white text-sm font-semibold px-3 py-1.5 no-select active:opacity-80 shrink-0"
+                              style={{ minHeight: 36 }}
+                            >
+                              선택
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+
+              {/* 3단계: 일정 입력 */}
+              {step === 3 && regimen && (
+                <>
+                  <div className="text-sm text-textmain font-semibold mb-3">
+                    {regimen.name}{' '}
+                    <span className="text-textsub font-normal">
+                      · {CATEGORY_META[categoryKey]?.label}
+                    </span>
+                  </div>
+
+                  <label className="block text-xs text-textsub mb-1">치료 시작일</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+                  />
+
+                  <label className="block text-xs text-textsub mb-1">입원/투여 일수 (1~7)</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={7}
+                    value={infusionDays}
+                    onChange={(e) => setInfusionDays(e.target.value)}
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+                  />
+
+                  <label className="block text-xs text-textsub mb-1">사이클 주기 (7~42일)</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={7}
+                    max={42}
+                    value={cycleDays}
+                    onChange={(e) => setCycleDays(e.target.value)}
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+                  />
+
+                  <label className="block text-xs text-textsub mb-1">차수 번호</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={cycleNumber}
+                    onChange={(e) => setCycleNumber(e.target.value)}
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain"
+                  />
+
+                  <label className="block text-xs text-textsub mb-1">메모 (선택)</label>
+                  <textarea
+                    rows={2}
+                    value={memo}
+                    onChange={(e) => setMemo(e.target.value)}
+                    placeholder="예) ㅇㅇ병원 외래, 4박5일 입원"
+                    className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-3 text-textmain placeholder:text-textsub/70 resize-none"
+                  />
+
+                  <div className="rounded-xl bg-yellow-50 border border-yellow-200 p-3 text-xs text-textmain leading-relaxed">
+                    💡 시작일부터 <b>{infusionDays}일</b> 동안 진한 형광펜으로,
+                    이후 다음 사이클까지 <b>{cycleDays}일</b> 동안 옅은 형광펜으로 표시됩니다.
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* 푸터: 액션 + 면책 */}
+            <div
+              className="px-4 py-3 border-t border-primary/10 flex flex-col gap-3"
+              style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+            >
+              {step === 3 && (
+                <div className="flex justify-end">
+                  <PrimaryButton onClick={handleSave}>저장</PrimaryButton>
+                </div>
+              )}
+              <div className="text-[11px] text-textsub leading-relaxed">
+                {SCHEDULE_DISCLAIMER}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ========== 사이클 캘린더 ==========
+    // 등록된 스케줄에 따라 달력 칸의 배경/글자색을 분기.
+    // - 투여일 (시작일 ~ +infusionDays-1): 진한 핑크
+    // - 사이클 기간 (투여일 종료 ~ +cycleDays-1): 옅은 핑크
+    // - 두 스케줄이 겹치면 '투여일'이 우선
+    function ScheduleCalendar({ schedules }) {
+      const now = new Date();
+      const [view, setView] = useState({ y: now.getFullYear(), m: now.getMonth() });
+      const today = todayKey();
+
+      const cells = useMemo(() => {
+        const firstOfMonth = new Date(view.y, view.m, 1);
+        const startWeekday = firstOfMonth.getDay();
+        const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+        const arr = [];
+        for (let i = 0; i < startWeekday; i++) arr.push(null);
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dateKey = `${view.y}-${String(view.m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          arr.push({ day: d, dateKey });
+        }
+        while (arr.length % 7 !== 0) arr.push(null);
+        return arr;
+      }, [view]);
+
+      function statusFor(dateKey) {
+        if (!dateKey) return null;
+        let status = null;
+        const dCur = new Date(dateKey + 'T00:00:00');
+        for (const s of schedules) {
+          if (!s.startDate) continue;
+          const inf = Math.max(0, Number(s.infusionDays) || 0);
+          const cyc = Math.max(0, Number(s.cycleDays) || 0);
+          if (cyc <= 0) continue;
+          const dStart = new Date(s.startDate + 'T00:00:00');
+          const diff = Math.round((dCur - dStart) / 86400000);
+          if (diff < 0) continue;
+          if (diff < inf) return 'infusion';     // 가장 강한 상태, 즉시 종료
+          if (diff < cyc) status = 'rest';        // fallback
+        }
+        return status;
+      }
+
+      function shiftMonth(delta) {
+        setView(({ y, m }) => {
+          const total = y * 12 + m + delta;
+          return { y: Math.floor(total / 12), m: ((total % 12) + 12) % 12 };
+        });
+      }
+      function goToday() {
+        const d = new Date();
+        setView({ y: d.getFullYear(), m: d.getMonth() });
+      }
+
+      const WEEKDAYS_KOR = ['일', '월', '화', '수', '목', '금', '토'];
+
+      return (
+        <Card title={`📅 ${view.y}년 ${view.m + 1}월 사이클`}>
+          {/* 월 이동 */}
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => shiftMonth(-1)}
+              aria-label="이전 달"
+              className="rounded-full bg-softbg text-textmain no-select px-3 py-1.5 text-sm active:opacity-70"
+              style={{ minHeight: 36 }}
+            >
+              ← 이전
+            </button>
+            <button
+              onClick={goToday}
+              className="rounded-full text-primary text-sm font-semibold no-select px-3 py-1.5 active:opacity-70"
+              style={{ minHeight: 36 }}
+            >
+              오늘
+            </button>
+            <button
+              onClick={() => shiftMonth(1)}
+              aria-label="다음 달"
+              className="rounded-full bg-softbg text-textmain no-select px-3 py-1.5 text-sm active:opacity-70"
+              style={{ minHeight: 36 }}
+            >
+              다음 →
+            </button>
+          </div>
+
+          {/* 요일 헤더 */}
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {WEEKDAYS_KOR.map((w, i) => (
+              <div
+                key={w}
+                className={`text-center text-[11px] font-semibold py-1
+                  ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-textsub'}`}
+              >
+                {w}
+              </div>
+            ))}
+          </div>
+
+          {/* 날짜 그리드 */}
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((cell, i) => {
+              if (!cell) {
+                return <div key={`p-${i}`} aria-hidden="true" />;
+              }
+              const status = statusFor(cell.dateKey);
+              const isToday = cell.dateKey === today;
+              const dow = i % 7;
+
+              let bgClass = '';
+              let textClass =
+                dow === 0 ? 'text-red-500' :
+                dow === 6 ? 'text-blue-500' :
+                'text-textmain';
+              let weight = 'font-medium';
+
+              if (status === 'infusion') {
+                bgClass = 'bg-primary';
+                textClass = 'text-white';
+                weight = 'font-bold';
+              } else if (status === 'rest') {
+                bgClass = 'bg-primary/15';
+                textClass = 'text-primary';
+                weight = 'font-semibold';
+              }
+
+              return (
+                <div
+                  key={cell.dateKey}
+                  className={`aspect-square flex items-center justify-center rounded-lg text-sm
+                              ${bgClass} ${textClass} ${weight}
+                              ${isToday ? 'ring-2 ring-primary' : ''}`}
+                >
+                  {cell.day}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 범례 */}
+          <div className="flex items-center gap-3 mt-3 flex-wrap text-[11px] text-textsub">
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded bg-primary" />
+              <span>투여일</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded bg-primary/15" />
+              <span>사이클 기간</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="inline-block w-3 h-3 rounded ring-2 ring-primary" />
+              <span>오늘</span>
+            </div>
+          </div>
+
+          {schedules.length === 0 && (
+            <div className="mt-3 text-center text-xs text-textsub">
+              아래에서 스케줄을 추가하면 색이 표시돼요.
+            </div>
+          )}
+        </Card>
+      );
+    }
+
+    // ========== 치료 여정 (게이미피케이션 추이) ==========
+    // 사이클 한 차수가 끝날 때마다 레벨업.
+    // 완료 기준: 오늘 >= startDate + cycleDays (full cycle elapsed)
+    function ProgressCard({ schedules }) {
+      const today = todayKey();
+
+      const stats = useMemo(() => {
+        let completed = 0;
+        let inProgress = 0;
+        let future = 0;
+        const now = new Date(today + 'T00:00:00');
+        schedules.forEach((s) => {
+          if (!s.startDate) return;
+          const start = new Date(s.startDate + 'T00:00:00');
+          const cyc = Math.max(0, Number(s.cycleDays) || 0);
+          const end = new Date(start);
+          end.setDate(end.getDate() + cyc);
+          if (now >= end) completed += 1;
+          else if (now >= start) inProgress += 1;
+          else future += 1;
+        });
+        return { completed, inProgress, future, total: schedules.length };
+      }, [schedules, today]);
+
+      const level = stats.completed;
+      const MILESTONE = 5;
+      const inMilestone = level % MILESTONE;
+      const milestonesDone = Math.floor(level / MILESTONE);
+      const nextMilestoneLevel = (milestonesDone + 1) * MILESTONE;
+
+      // 월별 누적 완료 사이클 차트 데이터
+      const trendData = useMemo(() => {
+        if (schedules.length === 0) return [];
+        const sorted = [...schedules]
+          .filter((s) => s.startDate)
+          .sort((a, b) => a.startDate.localeCompare(b.startDate));
+        if (sorted.length === 0) return [];
+
+        const firstStart = new Date(sorted[0].startDate + 'T00:00:00');
+        const todayDt = new Date();
+        let y = firstStart.getFullYear();
+        let m = firstStart.getMonth();
+        const lastY = todayDt.getFullYear();
+        const lastM = todayDt.getMonth();
+
+        const months = [];
+        while (y < lastY || (y === lastY && m <= lastM)) {
+          months.push({
+            key: `${y}-${String(m + 1).padStart(2, '0')}`,
+            완료: 0,
+          });
+          m += 1;
+          if (m > 11) {
+            y += 1;
+            m = 0;
+          }
+          if (months.length > 24) break; // 안전 가드
+        }
+
+        // 각 사이클의 완료 시점 = startDate + cycleDays
+        sorted.forEach((s) => {
+          const start = new Date(s.startDate + 'T00:00:00');
+          const cyc = Math.max(0, Number(s.cycleDays) || 0);
+          const end = new Date(start);
+          end.setDate(end.getDate() + cyc);
+          const endKey = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`;
+          months.forEach((mo) => {
+            if (mo.key >= endKey) mo.완료 += 1;
+          });
+        });
+
+        return months.slice(-6); // 최근 6개월
+      }, [schedules]);
+
+      // 레지멘별 통계
+      const byRegimen = useMemo(() => {
+        const map = new Map();
+        const now = new Date(today + 'T00:00:00');
+        schedules.forEach((s) => {
+          if (!s.startDate || !s.regimen) return;
+          const key = `${s.regimen}|${s.category || ''}`;
+          if (!map.has(key)) {
+            map.set(key, {
+              regimen: s.regimen,
+              category: s.category,
+              completed: 0,
+              inProgress: 0,
+              future: 0,
+            });
+          }
+          const stat = map.get(key);
+          const start = new Date(s.startDate + 'T00:00:00');
+          const cyc = Math.max(0, Number(s.cycleDays) || 0);
+          const end = new Date(start);
+          end.setDate(end.getDate() + cyc);
+          if (now >= end) stat.completed += 1;
+          else if (now >= start) stat.inProgress += 1;
+          else stat.future += 1;
+        });
+        return [...map.values()].sort((a, b) => b.completed - a.completed);
+      }, [schedules, today]);
+
+      if (schedules.length === 0) return null;
+
+      return (
+        <Card title="🎯 치료 여정">
+          {/* 레벨 배지 */}
+          <div className="flex flex-col items-center mb-4">
+            <div
+              className="rounded-full bg-gradient-to-br from-pink-400 via-fuchsia-500 to-purple-500 text-white shadow-lg flex flex-col items-center justify-center"
+              style={{ width: 110, height: 110 }}
+            >
+              <div className="text-[10px] font-semibold tracking-widest opacity-90">LEVEL</div>
+              <div className="text-4xl font-extrabold leading-none">{level}</div>
+            </div>
+            <div className="text-sm text-textmain font-semibold mt-3">
+              {level === 0
+                ? '곧 1차 시작이에요. 화이팅 🎗️'
+                : `${level}차 사이클 완료! 잘하고 있어요 💪`}
+            </div>
+            {/* 상태 뱃지 */}
+            <div className="flex gap-2 mt-2 flex-wrap justify-center">
+              <span className="text-[11px] rounded-full bg-primary/10 text-primary px-2 py-0.5 font-semibold">
+                완료 {stats.completed}
+              </span>
+              {stats.inProgress > 0 && (
+                <span className="text-[11px] rounded-full bg-yellow-100 text-yellow-700 px-2 py-0.5 font-semibold">
+                  진행 중 {stats.inProgress}
+                </span>
+              )}
+              {stats.future > 0 && (
+                <span className="text-[11px] rounded-full bg-secondary/10 text-secondary px-2 py-0.5 font-semibold">
+                  예정 {stats.future}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 다음 마일스톤 */}
+          <div className="mb-4">
+            <div className="flex justify-between text-xs text-textsub mb-1">
+              <span>다음 마일스톤 (Lv {nextMilestoneLevel})</span>
+              <span className="font-semibold text-primary">{inMilestone}/{MILESTONE}</span>
+            </div>
+            <div className="h-3 w-full rounded-full bg-softbg overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all"
+                style={{ width: `${(inMilestone / MILESTONE) * 100}%` }}
+              />
+            </div>
+            {milestonesDone > 0 && (
+              <div className="text-[11px] text-textsub mt-1 text-center">
+                🏆 마일스톤 {milestonesDone}개 달성
+              </div>
+            )}
+          </div>
+
+          {/* 누적 추이 차트 */}
+          {trendData.length >= 2 && (
+            <div className="mb-4">
+              <div className="text-xs text-textsub mb-2">
+                누적 완료 사이클 (최근 {trendData.length}개월)
+              </div>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                  <XAxis dataKey="key" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    allowDecimals={false}
+                    width={28}
+                  />
+                  <Tooltip formatter={(v) => `${v}차`} />
+                  <Line
+                    type="monotone"
+                    dataKey="완료"
+                    stroke="#E91E8C"
+                    strokeWidth={2.5}
+                    dot={{ r: 5, fill: '#E91E8C' }}
+                    activeDot={{ r: 7 }}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 레지멘별 */}
+          {byRegimen.length > 0 && (
+            <div>
+              <div className="text-xs text-textsub mb-2">레지멘별 진행</div>
+              <ul className="space-y-2">
+                {byRegimen.map((r, i) => {
+                  const meta = CATEGORY_META[r.category] || { emoji: '💊', label: '' };
+                  return (
+                    <li
+                      key={i}
+                      className="rounded-xl border border-primary/15 p-3 flex items-center gap-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-textmain truncate">
+                          {meta.emoji} {r.regimen}
+                        </div>
+                        <div className="text-xs text-textsub mt-0.5">
+                          {meta.label}
+                          {r.inProgress > 0 ? ` · 진행 ${r.inProgress}` : ''}
+                          {r.future > 0 ? ` · 예정 ${r.future}` : ''}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-base font-extrabold text-primary leading-none">
+                          Lv {r.completed}
+                        </div>
+                        <div className="text-[10px] text-textsub mt-0.5">완료</div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </Card>
+      );
+    }
+
+    function TreatmentTab() {
+      const [schedules, setSchedules] = useState(() => loadData(SCHEDULE_STORAGE_KEY, []));
+      const [modalOpen, setModalOpen] = useState(false);
+      const [deleteId, setDeleteId] = useState(null);
+      const [notifyEnabled, setNotifyEnabled] = useState(() =>
+        loadData('igt_notify_cycle', isNativeApp)
+      );
+      const [notifyMsg, setNotifyMsg] = useState('');
+
+      useEffect(() => {
+        saveData(SCHEDULE_STORAGE_KEY, schedules);
+      }, [schedules]);
+      useEffect(() => {
+        saveData('igt_notify_cycle', notifyEnabled);
+      }, [notifyEnabled]);
+
+      async function handleSaveSchedule(entry) {
+        setSchedules((prev) => [entry, ...prev]);
+        setModalOpen(false);
+        if (notifyEnabled && isNativeApp) {
+          const r = await scheduleCycleReminder(entry);
+          if (r.ok) {
+            setNotifyMsg(`🔔 알림 ${r.count}건 예약됨 (시작일 09:00 + 하루 전 21:00)`);
+          } else if (r.reason === 'permission-denied') {
+            setNotifyMsg('알림 권한이 거부되어 예약하지 못했어요.');
+          } else if (r.reason === 'past') {
+            setNotifyMsg('시작일이 이미 지나서 알림은 예약하지 않았어요.');
+          }
+          setTimeout(() => setNotifyMsg(''), 4000);
+        }
+      }
+      async function handleDelete() {
+        const id = deleteId;
+        await cancelCycleReminder(id);
+        setSchedules((prev) => prev.filter((s) => s.id !== id));
+        setDeleteId(null);
+      }
+      async function handleToggleNotify(next) {
+        setNotifyEnabled(next);
+        if (next && isNativeApp) {
+          const granted = await ensureNotificationPermission();
+          if (!granted) {
+            setNotifyMsg('알림 권한이 필요해요. 시스템 설정에서 허용해주세요.');
+            setNotifyEnabled(false);
+            setTimeout(() => setNotifyMsg(''), 4000);
+            return;
+          }
+          // 기존 스케줄에도 일괄 적용 (미래 일정만)
+          let count = 0;
+          for (const s of schedules) {
+            const r = await scheduleCycleReminder(s);
+            if (r.ok) count += r.count;
+          }
+          if (count > 0) {
+            setNotifyMsg(`🔔 기존 스케줄 ${count}건 알림 재예약 완료`);
+            setTimeout(() => setNotifyMsg(''), 4000);
+          }
+        } else if (!next && isNativeApp) {
+          for (const s of schedules) await cancelCycleReminder(s.id);
+        }
+      }
+
+      const sorted = useMemo(
+        () =>
+          [...schedules].sort((a, b) =>
+            (b.startDate || '').localeCompare(a.startDate || '')
+          ),
+        [schedules]
+      );
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          <ScheduleCalendar schedules={schedules} />
+          <ProgressCard schedules={schedules} />
+
+          {/* 알림 설정 (Capacitor 네이티브에서만 동작) */}
+          <Card>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <div className="text-sm font-bold text-textmain mb-1">🔔 사이클 알림</div>
+                <div className="text-xs text-textsub leading-relaxed">
+                  {isNativeApp
+                    ? '시작일 하루 전 21시 + 시작일 09시에 알림을 보내드려요.'
+                    : '⚠️ 알림은 설치된 앱(iOS/Android)에서만 동작해요. PWA 설치 또는 Capacitor 빌드 후 사용하세요.'}
+                </div>
+              </div>
+              <button
+                onClick={() => handleToggleNotify(!notifyEnabled)}
+                disabled={!isNativeApp}
+                aria-label="사이클 알림 토글"
+                className={`relative inline-flex shrink-0 rounded-full transition-colors no-select
+                  ${notifyEnabled ? 'bg-primary' : 'bg-gray-300'}
+                  ${!isNativeApp ? 'opacity-40' : ''}`}
+                style={{ width: 50, height: 30, minHeight: 30 }}
+              >
+                <span
+                  className="bg-white rounded-full shadow"
+                  style={{
+                    width: 24,
+                    height: 24,
+                    margin: 3,
+                    transform: notifyEnabled ? 'translateX(20px)' : 'translateX(0)',
+                    transition: 'transform 0.15s',
+                  }}
+                />
+              </button>
+            </div>
+            {notifyMsg && (
+              <div className="mt-3 text-xs text-primary bg-primary/5 rounded-lg px-3 py-2">
+                {notifyMsg}
+              </div>
+            )}
+          </Card>
+
+          <MedReminderCard />
+
+          <Card title="💊 항암 치료 스케줄">
+            <div className="text-xs text-textsub mb-3 leading-relaxed">
+              레지멘과 시작일을 등록해두면 사이클 일정이 기록됩니다.
+            </div>
+
+            {sorted.length === 0 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                아직 등록된 스케줄이 없어요.
+              </div>
+            ) : (
+              <ul className="space-y-2 mb-4">
+                {sorted.map((s) => {
+                  const meta = CATEGORY_META[s.category] || { emoji: '💊', label: '' };
+                  return (
+                    <li
+                      key={s.id}
+                      className="rounded-xl border border-primary/15 p-3 flex items-start gap-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-textsub mb-0.5">
+                          {meta.emoji} {meta.label} · {s.cycleNumber}차
+                        </div>
+                        <div className="text-sm font-semibold text-textmain truncate">
+                          {s.regimen}
+                        </div>
+                        <div className="text-xs text-textmain/80 mt-1">
+                          {s.startDate} 시작 · {s.infusionDays}일 투여 · {s.cycleDays}일 주기
+                        </div>
+                        {s.memo && (
+                          <div className="text-xs text-textsub mt-1 whitespace-pre-wrap">
+                            {s.memo}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setDeleteId(s.id)}
+                        aria-label="삭제"
+                        className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full"
+                        style={{ minHeight: 40, minWidth: 40 }}
+                      >
+                        🗑️
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            <div className="flex justify-end">
+              <PrimaryButton onClick={() => setModalOpen(true)}>
+                + 항암 스케줄 추가
+              </PrimaryButton>
+            </div>
+          </Card>
+
+          <RegimenScheduleModal
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+            onSave={handleSaveSchedule}
+          />
+
+          <ConfirmDialog
+            open={!!deleteId}
+            title="스케줄을 삭제할까요?"
+            message="삭제한 스케줄은 복구할 수 없어요."
+            onConfirm={handleDelete}
+            onCancel={() => setDeleteId(null)}
+          />
+        </div>
+      );
+    }
+
+    // ========== 탭 placeholder ==========
+    function Placeholder({ label }) {
+      return (
+        <div className="px-4 pb-6">
+          <Card>
+            <div className="py-10 text-center text-textsub text-sm">
+              {label} 탭 준비 중…
+            </div>
+          </Card>
+        </div>
+      );
+    }
+
+    // ========== App ==========
+    function App() {
+      const [tab, setTab] = useState('home');
+
+      const titleMap = {
+        home: '오늘 기록',
+        treatment: '치료 관리',
+        body: '몸 상태',
+        diary: '마음 일기',
+        expense: '병원비 관리',
+      };
+
+      // 탭 전환 시 스크롤 최상단
+      const scrollRef = useRef(null);
+      useEffect(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      }, [tab]);
+
+      return (
+        <div className="min-h-screen flex flex-col items-center">
+          <div className="w-full max-w-[480px] min-h-screen flex flex-col bg-softbg relative">
+            <Header title={titleMap[tab]} />
+            <main
+              ref={scrollRef}
+              className="scroll-area flex-1 overflow-y-auto pt-3"
+              style={{ paddingBottom: 'calc(72px + env(safe-area-inset-bottom))' }}
+            >
+              {tab === 'home'      && <HomeTab onNavigate={setTab} />}
+              {tab === 'treatment' && <TreatmentTab />}
+              {tab === 'body'      && <Placeholder label="몸 상태" />}
+              {tab === 'diary'     && <DiaryTab />}
+              {tab === 'expense'   && <ExpenseTab />}
+            </main>
+            <TabBar current={tab} onChange={setTab} />
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

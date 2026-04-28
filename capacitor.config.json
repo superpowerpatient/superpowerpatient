@@ -1,0 +1,19 @@
+{
+  "appId": "com.superpowerpatient.igt",
+  "appName": "이겨내자 오늘도",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {}
+}

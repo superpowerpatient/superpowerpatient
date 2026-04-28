@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">이겨내자 오늘도</string>
+    <string name="title_activity_main">이겨내자 오늘도</string>
+    <string name="package_name">com.superpowerpatient.igt</string>
+    <string name="custom_url_scheme">com.superpowerpatient.igt</string>
+</resources>

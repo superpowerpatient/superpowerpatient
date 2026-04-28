@@ -2967,6 +2967,20 @@
       { key: 'antidiarrhea', label: '지사제',  emoji: '🛑', placeholder: '예) 스멕타, 로페라마이드' },
     ];
 
+    // 통증은 NRS(0~10) 사용, 나머지는 0~3 segmented
+    function painEmoji(v) {
+      const n = Number(v) || 0;
+      if (n === 0) return '😌';
+      if (n <= 3) return '🙂';
+      if (n <= 6) return '😣';
+      if (n <= 9) return '😖';
+      return '🥵';
+    }
+    function severityThreshold(key) {
+      // "중등도 이상" 카운트용
+      return key === 'pain' ? 4 : 2;
+    }
+
     function emptyDailyRecord(date) {
       const sideEffects = {};
       SIDE_EFFECT_ITEMS.forEach((it) => { sideEffects[it.key] = 0; });
@@ -2978,6 +2992,11 @@
         date,
         fever: null,
         sideEffects,
+        // 구토·설사는 0~3 정도와 함께 횟수·양상도 같이 기록
+        vomitCount: 0,
+        vomitChar: '',
+        diarrheaCount: 0,
+        diarrheaChar: '',
         meals,
         meds,
         other: '',
@@ -3027,6 +3046,8 @@
       if (r.memo && r.memo.trim()) return true;
       const se = r.sideEffects || {};
       if (Object.values(se).some((v) => Number(v) > 0)) return true;
+      if (Number(r.vomitCount) > 0 || (r.vomitChar && r.vomitChar.trim())) return true;
+      if (Number(r.diarrheaCount) > 0 || (r.diarrheaChar && r.diarrheaChar.trim())) return true;
       const meals = r.meals || {};
       if (Number(meals.water) > 0) return true;
       for (const m of MEAL_KEYS) {
@@ -3086,7 +3107,10 @@
         onClose();
       }
 
-      const severeCount = Object.values(record.sideEffects).filter((v) => Number(v) >= 2).length;
+      const severeCount = SIDE_EFFECT_ITEMS.reduce((acc, it) => {
+        const v = Number(record.sideEffects[it.key]) || 0;
+        return v >= severityThreshold(it.key) ? acc + 1 : acc;
+      }, 0);
 
       return (
         <div
@@ -3161,11 +3185,61 @@
                   )}
                 </div>
                 <div className="text-xs text-textsub mb-3">
-                  없음 / 경미 / 중등도 / 심함 — 가장 가까운 단계를 선택하세요.
+                  통증은 NRS(0~10), 그 외는 없음/경미/중등도/심함 — 가장 가까운 단계를 선택하세요.
                 </div>
                 <ul className="space-y-2">
                   {SIDE_EFFECT_ITEMS.map((it) => {
                     const cur = Number(record.sideEffects[it.key]) || 0;
+
+                    // === 통증: NRS 0~10 슬라이더 ===
+                    if (it.key === 'pain') {
+                      const painLabel =
+                        cur === 0 ? '없음' :
+                        cur <= 3 ? '약함' :
+                        cur <= 6 ? '보통' :
+                        cur <= 9 ? '심함' : '극심';
+                      return (
+                        <li key={it.key} className="rounded-xl border border-primary/10 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-sm font-semibold text-textmain">
+                              {it.emoji} {it.label} <span className="text-textsub font-normal text-xs">(NRS 0~10)</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-base">{painEmoji(cur)}</span>
+                              <span className={`text-sm font-bold ${cur >= 7 ? 'text-red-600' : cur >= 4 ? 'text-orange-600' : 'text-textmain'}`}>
+                                {cur}
+                              </span>
+                              <span className="text-[11px] text-textsub ml-1">{painLabel}</span>
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={10}
+                            step={1}
+                            value={cur}
+                            onChange={(e) => setSeverity('pain', Number(e.target.value))}
+                            className="w-full accent-primary"
+                            style={{ height: 24 }}
+                          />
+                          <div className="flex justify-between text-[10px] text-textsub mt-1 px-1">
+                            <span>0 없음</span>
+                            <span>3 약함</span>
+                            <span>6 보통</span>
+                            <span>10 극심</span>
+                          </div>
+                        </li>
+                      );
+                    }
+
+                    // === 일반 0~3 segmented ===
+                    const hasDetail = it.key === 'vomit' || it.key === 'diarrhea';
+                    const countKey = it.key === 'vomit' ? 'vomitCount' : 'diarrheaCount';
+                    const charKey  = it.key === 'vomit' ? 'vomitChar'  : 'diarrheaChar';
+                    const charPlaceholder = it.key === 'vomit'
+                      ? '예) 음식물, 노란 물, 거품, 피'
+                      : '예) 묽은 변, 물설사, 점액·혈변';
+
                     return (
                       <li key={it.key} className="rounded-xl border border-primary/10 p-3">
                         <div className="flex items-center justify-between mb-2">
@@ -3192,6 +3266,33 @@
                             );
                           })}
                         </div>
+                        {hasDetail && cur > 0 && (
+                          <div className="grid grid-cols-3 gap-2 mt-3">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                max={50}
+                                value={Number(record[countKey]) || ''}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setRecord((prev) => ({ ...prev, [countKey]: v === '' ? 0 : Number(v) }));
+                                }}
+                                placeholder="0"
+                                className="flex-1 min-w-0 rounded-lg border border-primary/15 bg-softbg px-2 py-2 text-sm text-textmain placeholder:text-textsub/70 text-center"
+                              />
+                              <span className="text-xs text-textsub shrink-0">회</span>
+                            </div>
+                            <input
+                              type="text"
+                              value={record[charKey] || ''}
+                              onChange={(e) => setRecord((prev) => ({ ...prev, [charKey]: e.target.value }))}
+                              placeholder={charPlaceholder}
+                              className="col-span-2 rounded-lg border border-primary/15 bg-softbg px-3 py-2 text-sm text-textmain placeholder:text-textsub/70"
+                            />
+                          </div>
+                        )}
                       </li>
                     );
                   })}

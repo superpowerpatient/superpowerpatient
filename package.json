@@ -1,0 +1,22 @@
+{
+  "name": "igeonaeja-oneuldo",
+  "version": "0.1.0",
+  "description": "이겨내자 오늘도 — 항암 다이어리 PWA + 네이티브 앱 (iOS/Android via Capacitor)",
+  "private": true,
+  "scripts": {
+    "build": "node ./scripts/build-www.mjs",
+    "sync": "npm run build && cap sync",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android",
+    "run:android": "npm run sync && cap run android",
+    "run:ios": "npm run sync && cap run ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}

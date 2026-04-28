@@ -1985,7 +1985,7 @@
       'igt_cheering', 'igt_mood', 'igt_treatment', 'igt_sideeffects',
       'igt_medications', 'igt_vitals', 'igt_meals', 'igt_diary',
       'igt_expenses', 'igt_insurance', 'igt_profile', 'igt_schedule',
-      'igt_notify_cycle', 'igt_medreminders',
+      'igt_notify_cycle', 'igt_medreminders', 'igt_dailyrecord',
     ];
 
     function buildBackupPayload() {
@@ -2505,10 +2505,11 @@
     // - 투여일 (시작일 ~ +infusionDays-1): 진한 핑크
     // - 사이클 기간 (투여일 종료 ~ +cycleDays-1): 옅은 핑크
     // - 두 스케줄이 겹치면 '투여일'이 우선
-    function ScheduleCalendar({ schedules }) {
+    function ScheduleCalendar({ schedules, onDateClick, recordedDates }) {
       const now = new Date();
       const [view, setView] = useState({ y: now.getFullYear(), m: now.getMonth() });
       const today = todayKey();
+      const recordedSet = recordedDates instanceof Set ? recordedDates : new Set(recordedDates || []);
 
       const cells = useMemo(() => {
         const firstOfMonth = new Date(view.y, view.m, 1);
@@ -2605,6 +2606,7 @@
               }
               const status = statusFor(cell.dateKey);
               const isToday = cell.dateKey === today;
+              const hasRecord = recordedSet.has(cell.dateKey);
               const dow = i % 7;
 
               let bgClass = '';
@@ -2624,14 +2626,40 @@
                 weight = 'font-semibold';
               }
 
+              const dotColor = status === 'infusion' ? 'bg-white' : 'bg-primary';
+              const cellInner = (
+                <>
+                  <span>{cell.day}</span>
+                  {hasRecord && (
+                    <span
+                      className={`absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full ${dotColor}`}
+                      style={{ width: 4, height: 4 }}
+                      aria-label="기록 있음"
+                    />
+                  )}
+                </>
+              );
+
+              const baseClass = `relative aspect-square flex items-center justify-center rounded-lg text-sm
+                                 ${bgClass} ${textClass} ${weight}
+                                 ${isToday ? 'ring-2 ring-primary' : ''}`;
+
+              if (onDateClick) {
+                return (
+                  <button
+                    key={cell.dateKey}
+                    onClick={() => onDateClick(cell.dateKey)}
+                    aria-label={`${cell.dateKey} 기록 열기`}
+                    className={`${baseClass} no-select active:opacity-70`}
+                  >
+                    {cellInner}
+                  </button>
+                );
+              }
+
               return (
-                <div
-                  key={cell.dateKey}
-                  className={`aspect-square flex items-center justify-center rounded-lg text-sm
-                              ${bgClass} ${textClass} ${weight}
-                              ${isToday ? 'ring-2 ring-primary' : ''}`}
-                >
-                  {cell.day}
+                <div key={cell.dateKey} className={baseClass}>
+                  {cellInner}
                 </div>
               );
             })}
@@ -2887,6 +2915,278 @@
       );
     }
 
+    // ========== 일일 기록 모달 (부작용 우선, 식사·약은 다음 단계) ==========
+    const DAILYRECORD_STORAGE_KEY = 'igt_dailyrecord';
+
+    // 0=없음, 1=경미, 2=중등도, 3=심함
+    const SEVERITY_LABELS = ['없음', '경미', '중등도', '심함'];
+    const SEVERITY_BTN_CLASSES = [
+      'bg-softbg text-textsub border-primary/15',
+      'bg-yellow-100 text-yellow-800 border-yellow-300',
+      'bg-orange-100 text-orange-800 border-orange-300',
+      'bg-red-100 text-red-700 border-red-300',
+    ];
+
+    // 11개 항암 부작용 항목 (사용자 요청 + 일반 케이스)
+    const SIDE_EFFECT_ITEMS = [
+      { key: 'pain',         emoji: '😖', label: '통증' },
+      { key: 'nausea',       emoji: '😵', label: '오심·구역' },
+      { key: 'vomit',        emoji: '🤮', label: '구토' },
+      { key: 'diarrhea',     emoji: '💧', label: '설사' },
+      { key: 'constipation', emoji: '🚫', label: '변비' },
+      { key: 'fatigue',      emoji: '😴', label: '피로감' },
+      { key: 'appetite',     emoji: '🍽️', label: '식욕저하' },
+      { key: 'mouth',        emoji: '🦷', label: '구내염' },
+      { key: 'handfoot',     emoji: '🖐️', label: '수족증후군' },
+      { key: 'hairloss',     emoji: '💇', label: '탈모' },
+      { key: 'numb',         emoji: '🤲', label: '손발 저림' },
+    ];
+
+    function emptyDailyRecord(date) {
+      const sideEffects = {};
+      SIDE_EFFECT_ITEMS.forEach((it) => { sideEffects[it.key] = 0; });
+      return {
+        date,
+        fever: null,           // 체온 °C (null이면 미입력)
+        sideEffects,
+        other: '',             // 기타 부작용 자유입력
+        memo: '',
+        updatedAt: null,
+      };
+    }
+
+    function loadDailyRecord(date) {
+      const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+      return all.find((r) => r.date === date) || emptyDailyRecord(date);
+    }
+
+    function isRecordMeaningful(r) {
+      if (!r) return false;
+      if (r.fever !== null && r.fever !== '' && Number(r.fever) > 0) return true;
+      if (r.other && r.other.trim()) return true;
+      if (r.memo && r.memo.trim()) return true;
+      const se = r.sideEffects || {};
+      return Object.values(se).some((v) => Number(v) > 0);
+    }
+
+    function saveDailyRecord(record) {
+      const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+      const without = all.filter((r) => r.date !== record.date);
+      if (!isRecordMeaningful(record)) {
+        // 의미 있는 데이터가 없으면 그 날짜 자체를 제거
+        saveData(DAILYRECORD_STORAGE_KEY, without);
+        return false;
+      }
+      const next = { ...record, updatedAt: new Date().toISOString() };
+      saveData(DAILYRECORD_STORAGE_KEY, [next, ...without]);
+      return true;
+    }
+
+    function DailyRecordModal({ open, date, onClose, onSaved }) {
+      const [record, setRecord] = useState(null);
+      const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+      useEffect(() => {
+        if (open && date) {
+          setRecord(loadDailyRecord(date));
+        }
+      }, [open, date]);
+
+      if (!open || !record) return null;
+
+      function setSeverity(key, value) {
+        setRecord((prev) => ({
+          ...prev,
+          sideEffects: { ...prev.sideEffects, [key]: value },
+        }));
+      }
+
+      function handleSave() {
+        const saved = saveDailyRecord(record);
+        if (onSaved) onSaved(saved ? 'saved' : 'cleared');
+        onClose();
+      }
+
+      function handleDelete() {
+        const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+        saveData(DAILYRECORD_STORAGE_KEY, all.filter((r) => r.date !== date));
+        if (onSaved) onSaved('cleared');
+        setConfirmDeleteOpen(false);
+        onClose();
+      }
+
+      const severeCount = Object.values(record.sideEffects).filter((v) => Number(v) >= 2).length;
+
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+          style={{ touchAction: 'none' }}
+          onClick={onClose}
+        >
+          <div
+            className="bg-white w-full max-w-[480px] rounded-t-2xl sm:rounded-2xl flex flex-col"
+            style={{ maxHeight: '90vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="px-4 pt-4 pb-3 flex items-center justify-between border-b border-primary/10">
+              <button
+                onClick={onClose}
+                className="text-sm text-primary no-select px-2 py-1"
+                style={{ minHeight: 36, minWidth: 56 }}
+              >
+                닫기
+              </button>
+              <div className="text-sm font-bold text-textmain">
+                {formatKoreanDate(date)} 기록
+              </div>
+              <button
+                onClick={onClose}
+                aria-label="닫기"
+                className="text-textsub no-select"
+                style={{ minHeight: 36, minWidth: 36 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 본문 */}
+            <div className="flex-1 overflow-y-auto scroll-area px-4 py-4 space-y-5" style={{ minHeight: 0 }}>
+              {/* 체온 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">🌡️ 체온</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    min="34"
+                    max="42"
+                    value={record.fever ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setRecord((prev) => ({ ...prev, fever: v === '' ? null : Number(v) }));
+                    }}
+                    placeholder="36.5"
+                    className="flex-1 rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70 text-right"
+                  />
+                  <span className="text-sm text-textsub">°C</span>
+                </div>
+                {record.fever !== null && Number(record.fever) >= 38 && (
+                  <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    🔥 38°C 이상 발열입니다. 담당의에게 즉시 연락하세요.
+                  </div>
+                )}
+              </section>
+
+              {/* 부작용 11개 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">
+                  💢 부작용 정도
+                  {severeCount > 0 && (
+                    <span className="ml-2 text-xs text-red-600 font-semibold">
+                      중등도 이상 {severeCount}건
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-textsub mb-3">
+                  없음 / 경미 / 중등도 / 심함 — 가장 가까운 단계를 선택하세요.
+                </div>
+                <ul className="space-y-2">
+                  {SIDE_EFFECT_ITEMS.map((it) => {
+                    const cur = Number(record.sideEffects[it.key]) || 0;
+                    return (
+                      <li key={it.key} className="rounded-xl border border-primary/10 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-semibold text-textmain">
+                            {it.emoji} {it.label}
+                          </div>
+                          {cur > 0 && (
+                            <span className="text-xs text-textsub">{SEVERITY_LABELS[cur]}</span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {SEVERITY_LABELS.map((label, lvl) => {
+                            const active = cur === lvl;
+                            const cls = active ? SEVERITY_BTN_CLASSES[lvl] : 'bg-white text-textsub border-primary/15';
+                            return (
+                              <button
+                                key={lvl}
+                                onClick={() => setSeverity(it.key, lvl)}
+                                className={`rounded-lg border text-xs no-select py-2 ${cls} ${active ? 'font-bold' : ''}`}
+                                style={{ minHeight: 36 }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+
+              {/* 기타 부작용 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">✏️ 기타 증상</div>
+                <textarea
+                  rows={2}
+                  value={record.other}
+                  onChange={(e) => setRecord((prev) => ({ ...prev, other: e.target.value }))}
+                  placeholder="예) 어지러움, 두통 등 위에 없는 증상"
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70 resize-none"
+                />
+              </section>
+
+              {/* 메모 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">📝 메모</div>
+                <textarea
+                  rows={3}
+                  value={record.memo}
+                  onChange={(e) => setRecord((prev) => ({ ...prev, memo: e.target.value }))}
+                  placeholder="오늘 컨디션, 병원 안내사항, 가족에게 전할 말 등"
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70 resize-none"
+                />
+              </section>
+
+              <div className="text-[11px] text-textsub leading-relaxed pt-2">
+                ※ 본 기록은 의학적 판단을 대체하지 않습니다. 심한 증상이 있으면 즉시 담당 의료진과 상의하세요.
+              </div>
+            </div>
+
+            {/* 푸터 */}
+            <div
+              className="px-4 py-3 border-t border-primary/10 flex justify-between items-center gap-2"
+              style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+            >
+              {isRecordMeaningful(record) ? (
+                <button
+                  onClick={() => setConfirmDeleteOpen(true)}
+                  className="text-xs text-red-500 no-select px-2 py-1"
+                  style={{ minHeight: 36 }}
+                >
+                  🗑️ 이 날짜 기록 삭제
+                </button>
+              ) : (
+                <span />
+              )}
+              <PrimaryButton onClick={handleSave}>저장</PrimaryButton>
+            </div>
+
+            <ConfirmDialog
+              open={confirmDeleteOpen}
+              title="이 날짜 기록을 삭제할까요?"
+              message="복구할 수 없어요."
+              onConfirm={handleDelete}
+              onCancel={() => setConfirmDeleteOpen(false)}
+            />
+          </div>
+        </div>
+      );
+    }
+
     function TreatmentTab() {
       const [schedules, setSchedules] = useState(() => loadData(SCHEDULE_STORAGE_KEY, []));
       const [modalOpen, setModalOpen] = useState(false);
@@ -2895,6 +3195,16 @@
         loadData('igt_notify_cycle', isNativeApp)
       );
       const [notifyMsg, setNotifyMsg] = useState('');
+      const [recordDate, setRecordDate] = useState(null);
+      // 일일 기록이 있는 날짜 Set — 캘린더에 점 표시 + 모달 저장 후 갱신
+      const [recordedDates, setRecordedDates] = useState(() => {
+        const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+        return new Set(all.map((r) => r.date));
+      });
+      function refreshRecordedDates() {
+        const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+        setRecordedDates(new Set(all.map((r) => r.date)));
+      }
 
       useEffect(() => {
         saveData(SCHEDULE_STORAGE_KEY, schedules);
@@ -2959,7 +3269,11 @@
 
       return (
         <div className="px-4 pb-6 space-y-4">
-          <ScheduleCalendar schedules={schedules} />
+          <ScheduleCalendar
+            schedules={schedules}
+            recordedDates={recordedDates}
+            onDateClick={(d) => setRecordDate(d)}
+          />
           <ProgressCard schedules={schedules} />
 
           {/* 알림 설정 (Capacitor 네이티브에서만 동작) */}
@@ -3062,6 +3376,13 @@
             open={modalOpen}
             onClose={() => setModalOpen(false)}
             onSave={handleSaveSchedule}
+          />
+
+          <DailyRecordModal
+            open={!!recordDate}
+            date={recordDate}
+            onClose={() => setRecordDate(null)}
+            onSaved={refreshRecordedDates}
           />
 
           <ConfirmDialog

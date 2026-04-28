@@ -126,7 +126,8 @@
     const { useState, useEffect, useMemo, useRef, useCallback } = React;
     const {
       LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-      XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+      XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+      ReferenceLine,
     } = Recharts;
 
     // ========== localStorage 키 ==========
@@ -711,6 +712,74 @@
     }
 
     // ========== 탭 4: 마음 일기 ==========
+    // ========== 다이어리 테마 + 스티커 ==========
+    const DIARY_THEME_KEY = 'igt_diarytheme';
+
+    // 6종 테마 — 일기 카드/모달에 적용. cardClass와 swatch는 정적 문자열로 두어 Tailwind JIT가 인식하게.
+    const DIARY_THEMES = {
+      pink: {
+        label: '핑크톤',
+        emoji: '🌸',
+        cardClass: 'bg-pink-50 border-pink-200',
+        accentText: 'text-pink-700',
+        bandClass: 'bg-gradient-to-r from-pink-200 to-rose-200',
+        swatch: ['#FFE4EC', '#F472B6', '#E91E8C'],
+      },
+      wood: {
+        label: '클래식 우드',
+        emoji: '🪵',
+        cardClass: 'bg-amber-50 border-amber-300',
+        accentText: 'text-amber-800',
+        bandClass: 'bg-gradient-to-r from-amber-200 to-orange-200',
+        swatch: ['#FEF3C7', '#D97706', '#92400E'],
+      },
+      navy: {
+        label: '군청색',
+        emoji: '⚓',
+        cardClass: 'bg-indigo-50 border-indigo-300',
+        accentText: 'text-indigo-800',
+        bandClass: 'bg-gradient-to-r from-indigo-200 to-blue-200',
+        swatch: ['#E0E7FF', '#6366F1', '#1E1B4B'],
+      },
+      brown: {
+        label: '갈색톤',
+        emoji: '🍂',
+        cardClass: 'bg-stone-100 border-stone-300',
+        accentText: 'text-stone-800',
+        bandClass: 'bg-gradient-to-r from-stone-200 to-amber-200',
+        swatch: ['#FAFAF9', '#A8A29E', '#44403C'],
+      },
+      gray: {
+        label: '매트 그레이',
+        emoji: '🪨',
+        cardClass: 'bg-gray-100 border-gray-300',
+        accentText: 'text-gray-800',
+        bandClass: 'bg-gradient-to-r from-gray-200 to-slate-200',
+        swatch: ['#F3F4F6', '#9CA3AF', '#1F2937'],
+      },
+      white: {
+        label: '화이트',
+        emoji: '🤍',
+        cardClass: 'bg-white border-gray-200',
+        accentText: 'text-gray-800',
+        bandClass: 'bg-gradient-to-r from-gray-50 to-slate-100',
+        swatch: ['#FFFFFF', '#F3F4F6', '#E5E7EB'],
+      },
+    };
+    const DEFAULT_DIARY_THEME = 'pink';
+
+    // 42개 스티커 (이모지 기반)
+    const STICKER_OPTIONS = [
+      '❤️', '💕', '💖', '💗', '💝', '💞',
+      '⭐', '🌟', '✨', '🎗️', '🎀', '🌈',
+      '🌸', '🌷', '🌹', '🌻', '🌼', '🌺',
+      '🍀', '🍃', '🌿', '🌱', '🌳', '☘️',
+      '☀️', '🌙', '☁️', '⛅', '🌤️', '🌌',
+      '🦋', '🐰', '🐻', '🐱', '🐼', '🦊',
+      '🥰', '😊', '😌', '🍵', '🍰', '🧁',
+    ];
+    const MAX_STICKERS = 6;
+
     const GALLERY_GRADIENTS = [
       'from-pink-200 to-rose-100',
       'from-purple-200 to-indigo-100',
@@ -733,15 +802,38 @@
       const [draftBody, setDraftBody] = useState('');
       const [draftGrateful, setDraftGrateful] = useState(['', '', '']);
       const [draftHard, setDraftHard] = useState('');
+      const [draftStickers, setDraftStickers] = useState([]);
+      const [stickerPanelOpen, setStickerPanelOpen] = useState(false);
 
       const [viewDiary, setViewDiary] = useState(null);
       const [viewCheering, setViewCheering] = useState(null);
       const [deleteId, setDeleteId] = useState(null);
 
+      // 다이어리 테마 (저장된 값 또는 기본 핑크)
+      const [themeKey, setThemeKey] = useState(() => {
+        const k = loadData(DIARY_THEME_KEY, DEFAULT_DIARY_THEME);
+        return DIARY_THEMES[k] ? k : DEFAULT_DIARY_THEME;
+      });
+      useEffect(() => {
+        saveData(DIARY_THEME_KEY, themeKey);
+      }, [themeKey]);
+      const theme = DIARY_THEMES[themeKey] || DIARY_THEMES[DEFAULT_DIARY_THEME];
+
       // 일기 자동 저장
       useEffect(() => {
         saveData(STORAGE_KEYS.diary, diaryList);
       }, [diaryList]);
+
+      function toggleSticker(s) {
+        setDraftStickers((prev) => {
+          if (prev.includes(s)) return prev.filter((x) => x !== s);
+          if (prev.length >= MAX_STICKERS) return prev;
+          return [...prev, s];
+        });
+      }
+      function removeStickerAt(idx) {
+        setDraftStickers((prev) => prev.filter((_, i) => i !== idx));
+      }
 
       // 선택 날짜의 기분을 igt_mood에서 pre-fill (홈 탭과 연동)
       useEffect(() => {
@@ -774,11 +866,15 @@
           body,
           grateful: draftGrateful.map(g => g.trim()).filter(Boolean),
           hard: draftHard.trim(),
+          stickers: [...draftStickers],
+          themeKey,
         };
         setDiaryList(prev => [entry, ...prev]);
         setDraftBody('');
         setDraftGrateful(['', '', '']);
         setDraftHard('');
+        setDraftStickers([]);
+        setStickerPanelOpen(false);
       }
 
       function handleDelete() {
@@ -797,6 +893,42 @@
 
       return (
         <div className="px-4 pb-6 space-y-4">
+          {/* 4-0. 다이어리 테마 */}
+          <Card title="🎨 다이어리 테마">
+            <div className="text-xs text-textsub mb-3">
+              일기 카드와 모달 배경에 적용돼요.
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.entries(DIARY_THEMES).map(([k, t]) => {
+                const active = themeKey === k;
+                return (
+                  <button
+                    key={k}
+                    onClick={() => setThemeKey(k)}
+                    className={`rounded-xl p-3 text-left no-select border transition-all
+                                ${t.cardClass}
+                                ${active ? 'ring-2 ring-primary shadow-card' : 'opacity-90'}`}
+                    style={{ minHeight: 76 }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{t.emoji}</span>
+                      <span className={`text-sm font-bold ${t.accentText}`}>{t.label}</span>
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      {t.swatch.map((c, i) => (
+                        <span
+                          key={i}
+                          className="inline-block w-4 h-4 rounded-full border border-white/70 shadow-sm"
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
           {/* 4-1. 일기 작성 */}
           <Card title="📖 마음 일기 쓰기">
             <label className="block text-xs text-textsub mb-1">날짜</label>
@@ -861,6 +993,62 @@
               className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 mb-4 resize-none text-textmain"
             />
 
+            {/* 스티커 picker */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs text-textsub">
+                  🎀 스티커 (최대 {MAX_STICKERS}개)
+                </label>
+                <span className="text-[11px] text-textsub">
+                  {draftStickers.length}/{MAX_STICKERS}
+                </span>
+              </div>
+              <div className="flex gap-1 flex-wrap mb-2 min-h-[36px] items-center">
+                {draftStickers.length === 0 ? (
+                  <span className="text-xs text-textsub/70">아직 안 골랐어요. 아래에서 골라보세요.</span>
+                ) : (
+                  draftStickers.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => removeStickerAt(i)}
+                      className="text-2xl bg-white rounded-lg border border-primary/20 px-2 py-0.5 no-select active:opacity-70"
+                      aria-label={`${s} 제거`}
+                    >
+                      {s}
+                    </button>
+                  ))
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setStickerPanelOpen((v) => !v)}
+                className="w-full rounded-xl border border-dashed border-primary/30 text-sm text-primary py-2 no-select active:opacity-70"
+              >
+                {stickerPanelOpen ? '스티커 패널 닫기' : '+ 스티커 패널 열기'}
+              </button>
+              {stickerPanelOpen && (
+                <div className="grid grid-cols-6 gap-1 mt-2 p-2 rounded-xl bg-softbg border border-primary/10">
+                  {STICKER_OPTIONS.map((s, i) => {
+                    const picked = draftStickers.includes(s);
+                    const full = draftStickers.length >= MAX_STICKERS && !picked;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => toggleSticker(s)}
+                        disabled={full}
+                        className={`text-2xl rounded-lg py-1.5 no-select transition-all
+                                    ${picked ? 'bg-primary/15 ring-2 ring-primary' : 'bg-white active:bg-primary/5'}
+                                    ${full ? 'opacity-30' : ''}`}
+                        aria-label={s}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-end">
               <PrimaryButton onClick={handleSave} disabled={!draftBody.trim()}>
                 일기 저장
@@ -908,36 +1096,53 @@
                 아직 저장된 일기가 없어요.
               </div>
             ) : (
-              <ul className="divide-y divide-primary/10">
-                {sortedDiaries.map((d) => (
-                  <li key={d.id} className="py-3 flex items-start gap-2">
-                    <button
-                      onClick={() => setViewDiary(d)}
-                      className="flex-1 text-left no-select py-1"
+              <ul className="space-y-2">
+                {sortedDiaries.map((d) => {
+                  // 일기 작성 시점의 테마가 있으면 그걸, 없으면 현재 테마 사용
+                  const entryTheme = (d.themeKey && DIARY_THEMES[d.themeKey]) || theme;
+                  const stickers = Array.isArray(d.stickers) ? d.stickers : [];
+                  return (
+                    <li
+                      key={d.id}
+                      className={`rounded-xl border p-3 flex items-start gap-2 ${entryTheme.cardClass}`}
                     >
-                      <div className="text-xs text-textsub mb-0.5">
-                        {d.date}{d.mood ? ` · ${d.mood}` : ''}
-                      </div>
-                      <div className="text-sm text-textmain leading-snug"
-                           style={{
-                             display: '-webkit-box',
-                             WebkitLineClamp: 2,
-                             WebkitBoxOrient: 'vertical',
-                             overflow: 'hidden',
-                           }}>
-                        {d.body}
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => setDeleteId(d.id)}
-                      aria-label="삭제"
-                      className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full"
-                      style={{ minHeight: 40, minWidth: 40 }}
-                    >
-                      🗑️
-                    </button>
-                  </li>
-                ))}
+                      <button
+                        onClick={() => setViewDiary(d)}
+                        className="flex-1 text-left no-select py-0.5 min-w-0"
+                      >
+                        {stickers.length > 0 && (
+                          <div className="flex gap-0.5 mb-1.5 text-base flex-wrap">
+                            {stickers.map((s, i) => (
+                              <span key={i}>{s}</span>
+                            ))}
+                          </div>
+                        )}
+                        <div className={`text-xs mb-0.5 ${entryTheme.accentText}`}>
+                          {d.date}{d.mood ? ` · ${d.mood}` : ''}
+                        </div>
+                        <div
+                          className="text-sm text-textmain leading-snug"
+                          style={{
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {d.body}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setDeleteId(d.id)}
+                        aria-label="삭제"
+                        className="text-lg no-select active:opacity-70 flex items-center justify-center rounded-full shrink-0"
+                        style={{ minHeight: 36, minWidth: 36 }}
+                      >
+                        🗑️
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -961,35 +1166,47 @@
 
           {/* 일기 상세 모달 */}
           <DetailModal open={!!viewDiary} onClose={() => setViewDiary(null)}>
-            {viewDiary && (
-              <>
-                <div className="text-xs text-textsub mb-2">
-                  {formatKoreanDate(viewDiary.date)}{viewDiary.mood ? ` · ${viewDiary.mood}` : ''}
-                </div>
-                <div
-                  className="text-base leading-relaxed whitespace-pre-wrap text-textmain mb-4"
-                  style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
-                >
-                  {viewDiary.body}
-                </div>
-                {viewDiary.grateful && viewDiary.grateful.length > 0 && (
-                  <div className="mb-4">
-                    <div className="text-sm font-semibold text-primary mb-1">🙏 감사한 일</div>
-                    <ul className="list-disc list-inside text-sm text-textmain space-y-1">
-                      {viewDiary.grateful.map((g, i) => (
-                        <li key={i}>{g}</li>
-                      ))}
-                    </ul>
+            {viewDiary && (() => {
+              const entryTheme = (viewDiary.themeKey && DIARY_THEMES[viewDiary.themeKey]) || theme;
+              const stickers = Array.isArray(viewDiary.stickers) ? viewDiary.stickers : [];
+              return (
+                <>
+                  {/* 테마 띠 + 스티커 */}
+                  <div className={`-mx-5 -mt-4 mb-4 ${entryTheme.bandClass} px-5 py-3 rounded-t-xl`}>
+                    {stickers.length > 0 && (
+                      <div className="text-2xl flex gap-1 mb-1 flex-wrap">
+                        {stickers.map((s, i) => <span key={i}>{s}</span>)}
+                      </div>
+                    )}
+                    <div className={`text-xs font-semibold ${entryTheme.accentText}`}>
+                      {formatKoreanDate(viewDiary.date)}{viewDiary.mood ? ` · ${viewDiary.mood}` : ''}
+                    </div>
                   </div>
-                )}
-                {viewDiary.hard && (
-                  <div>
-                    <div className="text-sm font-semibold text-secondary mb-1">💙 힘들었던 점</div>
-                    <div className="text-sm text-textmain whitespace-pre-wrap">{viewDiary.hard}</div>
+                  <div
+                    className="text-base leading-relaxed whitespace-pre-wrap text-textmain mb-4"
+                    style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+                  >
+                    {viewDiary.body}
                   </div>
-                )}
-              </>
-            )}
+                  {viewDiary.grateful && viewDiary.grateful.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-sm font-semibold text-primary mb-1">🙏 감사한 일</div>
+                      <ul className="list-disc list-inside text-sm text-textmain space-y-1">
+                        {viewDiary.grateful.map((g, i) => (
+                          <li key={i}>{g}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {viewDiary.hard && (
+                    <div>
+                      <div className="text-sm font-semibold text-secondary mb-1">💙 힘들었던 점</div>
+                      <div className="text-sm text-textmain whitespace-pre-wrap">{viewDiary.hard}</div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </DetailModal>
 
           <ConfirmDialog
@@ -1985,7 +2202,8 @@
       'igt_cheering', 'igt_mood', 'igt_treatment', 'igt_sideeffects',
       'igt_medications', 'igt_vitals', 'igt_meals', 'igt_diary',
       'igt_expenses', 'igt_insurance', 'igt_profile', 'igt_schedule',
-      'igt_notify_cycle', 'igt_medreminders',
+      'igt_notify_cycle', 'igt_medreminders', 'igt_dailyrecord',
+      'igt_diarytheme',
     ];
 
     function buildBackupPayload() {
@@ -2505,10 +2723,11 @@
     // - 투여일 (시작일 ~ +infusionDays-1): 진한 핑크
     // - 사이클 기간 (투여일 종료 ~ +cycleDays-1): 옅은 핑크
     // - 두 스케줄이 겹치면 '투여일'이 우선
-    function ScheduleCalendar({ schedules }) {
+    function ScheduleCalendar({ schedules, onDateClick, recordedDates }) {
       const now = new Date();
       const [view, setView] = useState({ y: now.getFullYear(), m: now.getMonth() });
       const today = todayKey();
+      const recordedSet = recordedDates instanceof Set ? recordedDates : new Set(recordedDates || []);
 
       const cells = useMemo(() => {
         const firstOfMonth = new Date(view.y, view.m, 1);
@@ -2605,6 +2824,7 @@
               }
               const status = statusFor(cell.dateKey);
               const isToday = cell.dateKey === today;
+              const hasRecord = recordedSet.has(cell.dateKey);
               const dow = i % 7;
 
               let bgClass = '';
@@ -2624,14 +2844,40 @@
                 weight = 'font-semibold';
               }
 
+              const dotColor = status === 'infusion' ? 'bg-white' : 'bg-primary';
+              const cellInner = (
+                <>
+                  <span>{cell.day}</span>
+                  {hasRecord && (
+                    <span
+                      className={`absolute bottom-1 left-1/2 -translate-x-1/2 rounded-full ${dotColor}`}
+                      style={{ width: 4, height: 4 }}
+                      aria-label="기록 있음"
+                    />
+                  )}
+                </>
+              );
+
+              const baseClass = `relative aspect-square flex items-center justify-center rounded-lg text-sm
+                                 ${bgClass} ${textClass} ${weight}
+                                 ${isToday ? 'ring-2 ring-primary' : ''}`;
+
+              if (onDateClick) {
+                return (
+                  <button
+                    key={cell.dateKey}
+                    onClick={() => onDateClick(cell.dateKey)}
+                    aria-label={`${cell.dateKey} 기록 열기`}
+                    className={`${baseClass} no-select active:opacity-70`}
+                  >
+                    {cellInner}
+                  </button>
+                );
+              }
+
               return (
-                <div
-                  key={cell.dateKey}
-                  className={`aspect-square flex items-center justify-center rounded-lg text-sm
-                              ${bgClass} ${textClass} ${weight}
-                              ${isToday ? 'ring-2 ring-primary' : ''}`}
-                >
-                  {cell.day}
+                <div key={cell.dateKey} className={baseClass}>
+                  {cellInner}
                 </div>
               );
             })}
@@ -2887,6 +3133,661 @@
       );
     }
 
+    // ========== 일일 기록 모달 (부작용 우선, 식사·약은 다음 단계) ==========
+    const DAILYRECORD_STORAGE_KEY = 'igt_dailyrecord';
+
+    // 0=없음, 1=경미, 2=중등도, 3=심함
+    const SEVERITY_LABELS = ['없음', '경미', '중등도', '심함'];
+    const SEVERITY_BTN_CLASSES = [
+      'bg-softbg text-textsub border-primary/15',
+      'bg-yellow-100 text-yellow-800 border-yellow-300',
+      'bg-orange-100 text-orange-800 border-orange-300',
+      'bg-red-100 text-red-700 border-red-300',
+    ];
+
+    // 11개 항암 부작용 항목 (사용자 요청 + 일반 케이스)
+    const SIDE_EFFECT_ITEMS = [
+      { key: 'pain',         emoji: '😖', label: '통증' },
+      { key: 'nausea',       emoji: '😵', label: '오심·구역' },
+      { key: 'vomit',        emoji: '🤮', label: '구토' },
+      { key: 'diarrhea',     emoji: '💧', label: '설사' },
+      { key: 'constipation', emoji: '🚫', label: '변비' },
+      { key: 'fatigue',      emoji: '😴', label: '피로감' },
+      { key: 'appetite',     emoji: '🍽️', label: '식욕저하' },
+      { key: 'mouth',        emoji: '🦷', label: '구내염' },
+      { key: 'handfoot',     emoji: '🖐️', label: '수족증후군' },
+      { key: 'hairloss',     emoji: '💇', label: '탈모' },
+      { key: 'numb',         emoji: '🤲', label: '손발 저림' },
+    ];
+
+    // 식사 4끼 + 수분
+    const MEAL_KEYS = [
+      { key: 'breakfast', label: '아침', emoji: '🌅' },
+      { key: 'lunch',     label: '점심', emoji: '🌞' },
+      { key: 'snack',     label: '간식', emoji: '🍎' },
+      { key: 'dinner',    label: '저녁', emoji: '🌙' },
+    ];
+    const WATER_GOAL_ML = 2000;
+    function ratioEmoji(r) {
+      const v = Number(r) || 0;
+      if (v === 0) return '😞';
+      if (v <= 30) return '😕';
+      if (v <= 50) return '😐';
+      if (v <= 80) return '😊';
+      return '🎉';
+    }
+
+    // 약 복용 4종 (간단 토글)
+    const MED_QUICK_CATEGORIES = [
+      { key: 'painkiller',   label: '진통제',  emoji: '💊', placeholder: '예) 타이레놀, 트라마돌' },
+      { key: 'antiemetic',   label: '제토제',  emoji: '🤢', placeholder: '예) 조프란, 카이트릴' },
+      { key: 'laxative',     label: '변비약',  emoji: '🌿', placeholder: '예) 마그밀, 락툴로스' },
+      { key: 'antidiarrhea', label: '지사제',  emoji: '🛑', placeholder: '예) 스멕타, 로페라마이드' },
+    ];
+
+    // 통증은 NRS(0~10) 사용, 나머지는 0~3 segmented
+    function painEmoji(v) {
+      const n = Number(v) || 0;
+      if (n === 0) return '😌';
+      if (n <= 3) return '🙂';
+      if (n <= 6) return '😣';
+      if (n <= 9) return '😖';
+      return '🥵';
+    }
+    function severityThreshold(key) {
+      // "중등도 이상" 카운트용
+      return key === 'pain' ? 4 : 2;
+    }
+
+    function emptyDailyRecord(date) {
+      const sideEffects = {};
+      SIDE_EFFECT_ITEMS.forEach((it) => { sideEffects[it.key] = 0; });
+      const meals = { water: 0 };
+      MEAL_KEYS.forEach((m) => { meals[m.key] = { content: '', ratio: 0 }; });
+      const meds = {};
+      MED_QUICK_CATEGORIES.forEach((c) => { meds[c.key] = { taken: false, name: '', count: 0 }; });
+      return {
+        date,
+        fever: null,
+        sideEffects,
+        // 구토·설사는 0~3 정도와 함께 횟수·양상도 같이 기록
+        vomitCount: 0,
+        vomitChar: '',
+        diarrheaCount: 0,
+        diarrheaChar: '',
+        meals,
+        meds,
+        other: '',
+        memo: '',
+        updatedAt: null,
+      };
+    }
+
+    function loadDailyRecord(date) {
+      const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+      const found = all.find((r) => r.date === date);
+      if (!found) return emptyDailyRecord(date);
+      // 과거 버전(식사·약 필드 없음) 호환
+      const base = emptyDailyRecord(date);
+      return {
+        ...base,
+        ...found,
+        sideEffects: { ...base.sideEffects, ...(found.sideEffects || {}) },
+        meals: {
+          ...base.meals,
+          ...(found.meals || {}),
+          ...MEAL_KEYS.reduce((acc, m) => {
+            const v = (found.meals || {})[m.key];
+            acc[m.key] = v && typeof v === 'object'
+              ? { content: v.content || '', ratio: Number(v.ratio) || 0 }
+              : base.meals[m.key];
+            return acc;
+          }, {}),
+        },
+        meds: {
+          ...base.meds,
+          ...MED_QUICK_CATEGORIES.reduce((acc, c) => {
+            const v = (found.meds || {})[c.key];
+            acc[c.key] = v && typeof v === 'object'
+              ? { taken: !!v.taken, name: v.name || '', count: Number(v.count) || 0 }
+              : base.meds[c.key];
+            return acc;
+          }, {}),
+        },
+      };
+    }
+
+    function isRecordMeaningful(r) {
+      if (!r) return false;
+      if (r.fever !== null && r.fever !== '' && Number(r.fever) > 0) return true;
+      if (r.other && r.other.trim()) return true;
+      if (r.memo && r.memo.trim()) return true;
+      const se = r.sideEffects || {};
+      if (Object.values(se).some((v) => Number(v) > 0)) return true;
+      if (Number(r.vomitCount) > 0 || (r.vomitChar && r.vomitChar.trim())) return true;
+      if (Number(r.diarrheaCount) > 0 || (r.diarrheaChar && r.diarrheaChar.trim())) return true;
+      const meals = r.meals || {};
+      if (Number(meals.water) > 0) return true;
+      for (const m of MEAL_KEYS) {
+        const meal = meals[m.key];
+        if (meal && (Number(meal.ratio) > 0 || (meal.content && meal.content.trim()))) return true;
+      }
+      const meds = r.meds || {};
+      for (const c of MED_QUICK_CATEGORIES) {
+        if (meds[c.key] && meds[c.key].taken) return true;
+      }
+      return false;
+    }
+
+    function saveDailyRecord(record) {
+      const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+      const without = all.filter((r) => r.date !== record.date);
+      if (!isRecordMeaningful(record)) {
+        // 의미 있는 데이터가 없으면 그 날짜 자체를 제거
+        saveData(DAILYRECORD_STORAGE_KEY, without);
+        return false;
+      }
+      const next = { ...record, updatedAt: new Date().toISOString() };
+      saveData(DAILYRECORD_STORAGE_KEY, [next, ...without]);
+      return true;
+    }
+
+    function DailyRecordModal({ open, date, onClose, onSaved }) {
+      const [record, setRecord] = useState(null);
+      const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+      useEffect(() => {
+        if (open && date) {
+          setRecord(loadDailyRecord(date));
+        }
+      }, [open, date]);
+
+      if (!open || !record) return null;
+
+      function setSeverity(key, value) {
+        setRecord((prev) => ({
+          ...prev,
+          sideEffects: { ...prev.sideEffects, [key]: value },
+        }));
+      }
+
+      function handleSave() {
+        const saved = saveDailyRecord(record);
+        if (onSaved) onSaved(saved ? 'saved' : 'cleared');
+        onClose();
+      }
+
+      function handleDelete() {
+        const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+        saveData(DAILYRECORD_STORAGE_KEY, all.filter((r) => r.date !== date));
+        if (onSaved) onSaved('cleared');
+        setConfirmDeleteOpen(false);
+        onClose();
+      }
+
+      const severeCount = SIDE_EFFECT_ITEMS.reduce((acc, it) => {
+        const v = Number(record.sideEffects[it.key]) || 0;
+        return v >= severityThreshold(it.key) ? acc + 1 : acc;
+      }, 0);
+
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40"
+          style={{ touchAction: 'none' }}
+          onClick={onClose}
+        >
+          <div
+            className="bg-white w-full max-w-[480px] rounded-t-2xl sm:rounded-2xl flex flex-col"
+            style={{ maxHeight: '90vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="px-4 pt-4 pb-3 flex items-center justify-between border-b border-primary/10">
+              <button
+                onClick={onClose}
+                className="text-sm text-primary no-select px-2 py-1"
+                style={{ minHeight: 36, minWidth: 56 }}
+              >
+                닫기
+              </button>
+              <div className="text-sm font-bold text-textmain">
+                {formatKoreanDate(date)} 기록
+              </div>
+              <button
+                onClick={onClose}
+                aria-label="닫기"
+                className="text-textsub no-select"
+                style={{ minHeight: 36, minWidth: 36 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 본문 */}
+            <div className="flex-1 overflow-y-auto scroll-area px-4 py-4 space-y-5" style={{ minHeight: 0 }}>
+              {/* 체온 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">🌡️ 체온</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    min="34"
+                    max="42"
+                    value={record.fever ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setRecord((prev) => ({ ...prev, fever: v === '' ? null : Number(v) }));
+                    }}
+                    placeholder="36.5"
+                    className="flex-1 rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70 text-right"
+                  />
+                  <span className="text-sm text-textsub">°C</span>
+                </div>
+                {record.fever !== null && Number(record.fever) >= 38 && (
+                  <div className="mt-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    🔥 38°C 이상 발열입니다. 담당의에게 즉시 연락하세요.
+                  </div>
+                )}
+              </section>
+
+              {/* 부작용 11개 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">
+                  💢 부작용 정도
+                  {severeCount > 0 && (
+                    <span className="ml-2 text-xs text-red-600 font-semibold">
+                      중등도 이상 {severeCount}건
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-textsub mb-3">
+                  통증은 NRS(0~10), 그 외는 없음/경미/중등도/심함 — 가장 가까운 단계를 선택하세요.
+                </div>
+                <ul className="space-y-2">
+                  {SIDE_EFFECT_ITEMS.map((it) => {
+                    const cur = Number(record.sideEffects[it.key]) || 0;
+
+                    // === 통증: NRS 0~10 슬라이더 ===
+                    if (it.key === 'pain') {
+                      const painLabel =
+                        cur === 0 ? '없음' :
+                        cur <= 3 ? '약함' :
+                        cur <= 6 ? '보통' :
+                        cur <= 9 ? '심함' : '극심';
+                      return (
+                        <li key={it.key} className="rounded-xl border border-primary/10 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-sm font-semibold text-textmain">
+                              {it.emoji} {it.label} <span className="text-textsub font-normal text-xs">(NRS 0~10)</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-base">{painEmoji(cur)}</span>
+                              <span className={`text-sm font-bold ${cur >= 7 ? 'text-red-600' : cur >= 4 ? 'text-orange-600' : 'text-textmain'}`}>
+                                {cur}
+                              </span>
+                              <span className="text-[11px] text-textsub ml-1">{painLabel}</span>
+                            </div>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={10}
+                            step={1}
+                            value={cur}
+                            onChange={(e) => setSeverity('pain', Number(e.target.value))}
+                            className="w-full accent-primary"
+                            style={{ height: 24 }}
+                          />
+                          <div className="flex justify-between text-[10px] text-textsub mt-1 px-1">
+                            <span>0 없음</span>
+                            <span>3 약함</span>
+                            <span>6 보통</span>
+                            <span>10 극심</span>
+                          </div>
+                        </li>
+                      );
+                    }
+
+                    // === 일반 0~3 segmented ===
+                    const hasDetail = it.key === 'vomit' || it.key === 'diarrhea';
+                    const countKey = it.key === 'vomit' ? 'vomitCount' : 'diarrheaCount';
+                    const charKey  = it.key === 'vomit' ? 'vomitChar'  : 'diarrheaChar';
+                    const charPlaceholder = it.key === 'vomit'
+                      ? '예) 음식물, 노란 물, 거품, 피'
+                      : '예) 묽은 변, 물설사, 점액·혈변';
+
+                    return (
+                      <li key={it.key} className="rounded-xl border border-primary/10 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-semibold text-textmain">
+                            {it.emoji} {it.label}
+                          </div>
+                          {cur > 0 && (
+                            <span className="text-xs text-textsub">{SEVERITY_LABELS[cur]}</span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {SEVERITY_LABELS.map((label, lvl) => {
+                            const active = cur === lvl;
+                            const cls = active ? SEVERITY_BTN_CLASSES[lvl] : 'bg-white text-textsub border-primary/15';
+                            return (
+                              <button
+                                key={lvl}
+                                onClick={() => setSeverity(it.key, lvl)}
+                                className={`rounded-lg border text-xs no-select py-2 ${cls} ${active ? 'font-bold' : ''}`}
+                                style={{ minHeight: 36 }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {hasDetail && cur > 0 && (
+                          <div className="grid grid-cols-3 gap-2 mt-3">
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                max={50}
+                                value={Number(record[countKey]) || ''}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setRecord((prev) => ({ ...prev, [countKey]: v === '' ? 0 : Number(v) }));
+                                }}
+                                placeholder="0"
+                                className="flex-1 min-w-0 rounded-lg border border-primary/15 bg-softbg px-2 py-2 text-sm text-textmain placeholder:text-textsub/70 text-center"
+                              />
+                              <span className="text-xs text-textsub shrink-0">회</span>
+                            </div>
+                            <input
+                              type="text"
+                              value={record[charKey] || ''}
+                              onChange={(e) => setRecord((prev) => ({ ...prev, [charKey]: e.target.value }))}
+                              placeholder={charPlaceholder}
+                              className="col-span-2 rounded-lg border border-primary/15 bg-softbg px-3 py-2 text-sm text-textmain placeholder:text-textsub/70"
+                            />
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+
+              {/* 기타 부작용 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">✏️ 기타 증상</div>
+                <textarea
+                  rows={2}
+                  value={record.other}
+                  onChange={(e) => setRecord((prev) => ({ ...prev, other: e.target.value }))}
+                  placeholder="예) 어지러움, 두통 등 위에 없는 증상"
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70 resize-none"
+                />
+              </section>
+
+              {/* 식사량 + 종류 */}
+              <section>
+                {(() => {
+                  const eaten = MEAL_KEYS
+                    .map((m) => Number((record.meals && record.meals[m.key] && record.meals[m.key].ratio) || 0))
+                    .filter((v) => v > 0);
+                  const avg = eaten.length > 0 ? Math.round(eaten.reduce((a, b) => a + b, 0) / eaten.length) : null;
+                  return (
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-sm font-bold text-textmain">🍚 식사량</div>
+                      {avg !== null && (
+                        <span className="text-xs text-textsub">
+                          평균 {avg}% {ratioEmoji(avg)}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+                <ul className="space-y-3">
+                  {MEAL_KEYS.map((m) => {
+                    const meal = (record.meals && record.meals[m.key]) || { content: '', ratio: 0 };
+                    return (
+                      <li key={m.key} className="rounded-xl border border-primary/10 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-semibold text-textmain">
+                            {m.emoji} {m.label}
+                          </div>
+                          <div className="text-xs text-textsub flex items-center gap-1">
+                            <span className="text-base">{ratioEmoji(meal.ratio)}</span>
+                            <span className="font-semibold text-textmain w-9 text-right">
+                              {Number(meal.ratio) || 0}%
+                            </span>
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          value={meal.content}
+                          onChange={(e) =>
+                            setRecord((prev) => ({
+                              ...prev,
+                              meals: {
+                                ...prev.meals,
+                                [m.key]: { ...prev.meals[m.key], content: e.target.value },
+                              },
+                            }))
+                          }
+                          placeholder="무엇을 드셨나요? (선택)"
+                          className="w-full rounded-lg border border-primary/15 bg-softbg px-3 py-2 mb-2 text-sm text-textmain placeholder:text-textsub/70"
+                        />
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={10}
+                          value={Number(meal.ratio) || 0}
+                          onChange={(e) =>
+                            setRecord((prev) => ({
+                              ...prev,
+                              meals: {
+                                ...prev.meals,
+                                [m.key]: { ...prev.meals[m.key], ratio: Number(e.target.value) },
+                              },
+                            }))
+                          }
+                          className="w-full accent-primary"
+                          style={{ height: 24 }}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+
+              {/* 수분 섭취 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">💧 수분 섭취</div>
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={5000}
+                    step={50}
+                    value={Number((record.meals && record.meals.water) || 0) || ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setRecord((prev) => ({
+                        ...prev,
+                        meals: { ...prev.meals, water: v === '' ? 0 : Number(v) },
+                      }));
+                    }}
+                    placeholder="0"
+                    className="flex-1 rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70 text-right"
+                  />
+                  <span className="text-sm text-textsub">ml</span>
+                </div>
+                {(() => {
+                  const water = Number((record.meals && record.meals.water) || 0);
+                  const pct = Math.min(100, Math.max(0, (water / WATER_GOAL_ML) * 100));
+                  return (
+                    <>
+                      <div className="h-2.5 w-full rounded-full bg-softbg overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between mt-1 text-[11px] text-textsub">
+                        <span>{water}ml</span>
+                        <span>목표 {WATER_GOAL_ML}ml ({pct.toFixed(0)}%)</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </section>
+
+              {/* 약 복용 (4종 빠른 체크) */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">💊 약 복용</div>
+                <div className="text-xs text-textsub mb-3">
+                  복용한 약을 켜고, 필요시 이름·횟수를 적어주세요.
+                </div>
+                <ul className="space-y-2">
+                  {MED_QUICK_CATEGORIES.map((c) => {
+                    const m = (record.meds && record.meds[c.key]) || { taken: false, name: '', count: 0 };
+                    return (
+                      <li
+                        key={c.key}
+                        className={`rounded-xl border p-3 transition-colors
+                                    ${m.taken ? 'border-primary/40 bg-primary/5' : 'border-primary/10 bg-white'}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() =>
+                              setRecord((prev) => ({
+                                ...prev,
+                                meds: {
+                                  ...prev.meds,
+                                  [c.key]: { ...prev.meds[c.key], taken: !prev.meds[c.key].taken },
+                                },
+                              }))
+                            }
+                            aria-label={`${c.label} 복용 여부`}
+                            className={`relative inline-flex shrink-0 rounded-full transition-colors no-select
+                                        ${m.taken ? 'bg-primary' : 'bg-gray-300'}`}
+                            style={{ width: 44, height: 26, minHeight: 26 }}
+                          >
+                            <span
+                              className="bg-white rounded-full shadow"
+                              style={{
+                                width: 20,
+                                height: 20,
+                                margin: 3,
+                                transform: m.taken ? 'translateX(18px)' : 'translateX(0)',
+                                transition: 'transform 0.15s',
+                              }}
+                            />
+                          </button>
+                          <div className="flex-1">
+                            <div className="text-sm font-semibold text-textmain">
+                              {c.emoji} {c.label}
+                            </div>
+                          </div>
+                        </div>
+                        {m.taken && (
+                          <div className="mt-3 grid grid-cols-3 gap-2">
+                            <input
+                              type="text"
+                              value={m.name}
+                              onChange={(e) =>
+                                setRecord((prev) => ({
+                                  ...prev,
+                                  meds: {
+                                    ...prev.meds,
+                                    [c.key]: { ...prev.meds[c.key], name: e.target.value },
+                                  },
+                                }))
+                              }
+                              placeholder={c.placeholder}
+                              className="col-span-2 rounded-lg border border-primary/15 bg-white px-3 py-2 text-sm text-textmain placeholder:text-textsub/70"
+                            />
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                max={20}
+                                value={Number(m.count) || ''}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setRecord((prev) => ({
+                                    ...prev,
+                                    meds: {
+                                      ...prev.meds,
+                                      [c.key]: { ...prev.meds[c.key], count: v === '' ? 0 : Number(v) },
+                                    },
+                                  }));
+                                }}
+                                placeholder="0"
+                                className="flex-1 min-w-0 rounded-lg border border-primary/15 bg-white px-2 py-2 text-sm text-textmain placeholder:text-textsub/70 text-center"
+                              />
+                              <span className="text-xs text-textsub">회</span>
+                            </div>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+
+              {/* 메모 */}
+              <section>
+                <div className="text-sm font-bold text-textmain mb-2">📝 메모</div>
+                <textarea
+                  rows={3}
+                  value={record.memo}
+                  onChange={(e) => setRecord((prev) => ({ ...prev, memo: e.target.value }))}
+                  placeholder="오늘 컨디션, 병원 안내사항, 가족에게 전할 말 등"
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70 resize-none"
+                />
+              </section>
+
+              <div className="text-[11px] text-textsub leading-relaxed pt-2">
+                ※ 본 기록은 의학적 판단을 대체하지 않습니다. 심한 증상이 있으면 즉시 담당 의료진과 상의하세요.
+              </div>
+            </div>
+
+            {/* 푸터 */}
+            <div
+              className="px-4 py-3 border-t border-primary/10 flex justify-between items-center gap-2"
+              style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+            >
+              {isRecordMeaningful(record) ? (
+                <button
+                  onClick={() => setConfirmDeleteOpen(true)}
+                  className="text-xs text-red-500 no-select px-2 py-1"
+                  style={{ minHeight: 36 }}
+                >
+                  🗑️ 이 날짜 기록 삭제
+                </button>
+              ) : (
+                <span />
+              )}
+              <PrimaryButton onClick={handleSave}>저장</PrimaryButton>
+            </div>
+
+            <ConfirmDialog
+              open={confirmDeleteOpen}
+              title="이 날짜 기록을 삭제할까요?"
+              message="복구할 수 없어요."
+              onConfirm={handleDelete}
+              onCancel={() => setConfirmDeleteOpen(false)}
+            />
+          </div>
+        </div>
+      );
+    }
+
     function TreatmentTab() {
       const [schedules, setSchedules] = useState(() => loadData(SCHEDULE_STORAGE_KEY, []));
       const [modalOpen, setModalOpen] = useState(false);
@@ -2895,6 +3796,16 @@
         loadData('igt_notify_cycle', isNativeApp)
       );
       const [notifyMsg, setNotifyMsg] = useState('');
+      const [recordDate, setRecordDate] = useState(null);
+      // 일일 기록이 있는 날짜 Set — 캘린더에 점 표시 + 모달 저장 후 갱신
+      const [recordedDates, setRecordedDates] = useState(() => {
+        const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+        return new Set(all.map((r) => r.date));
+      });
+      function refreshRecordedDates() {
+        const all = loadData(DAILYRECORD_STORAGE_KEY, []);
+        setRecordedDates(new Set(all.map((r) => r.date)));
+      }
 
       useEffect(() => {
         saveData(SCHEDULE_STORAGE_KEY, schedules);
@@ -2959,7 +3870,11 @@
 
       return (
         <div className="px-4 pb-6 space-y-4">
-          <ScheduleCalendar schedules={schedules} />
+          <ScheduleCalendar
+            schedules={schedules}
+            recordedDates={recordedDates}
+            onDateClick={(d) => setRecordDate(d)}
+          />
           <ProgressCard schedules={schedules} />
 
           {/* 알림 설정 (Capacitor 네이티브에서만 동작) */}
@@ -3064,12 +3979,513 @@
             onSave={handleSaveSchedule}
           />
 
+          <DailyRecordModal
+            open={!!recordDate}
+            date={recordDate}
+            onClose={() => setRecordDate(null)}
+            onSaved={refreshRecordedDates}
+          />
+
           <ConfirmDialog
             open={!!deleteId}
             title="스케줄을 삭제할까요?"
             message="삭제한 스케줄은 복구할 수 없어요."
             onConfirm={handleDelete}
             onCancel={() => setDeleteId(null)}
+          />
+        </div>
+      );
+    }
+
+    // ========== 탭 placeholder ==========
+    // ========== 탭 3: 몸 상태 ==========
+    // 키 → igt_profile.height (1회 등록 후 자동 로드, 수정 가능)
+    // 체중 측정 → igt_vitals 에 누적 (date, weight, bsa, bmi)
+    // BSA: Mosteller 공식  √(키 × 체중 / 3600)
+    // BMI: 체중 / (키[m])²
+    function bmiCategory(bmi) {
+      if (bmi == null || isNaN(bmi)) return null;
+      if (bmi < 18.5) return { label: '저체중', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
+      if (bmi < 25)   return { label: '정상',   cls: 'bg-green-100 text-green-700 border-green-200' };
+      if (bmi < 30)   return { label: '과체중', cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' };
+      return { label: '비만', cls: 'bg-red-100 text-red-700 border-red-200' };
+    }
+
+    // ========== 증상 추이 차트 ==========
+    // igt_dailyrecord에서 통증 NRS / 체온 / 구토 횟수를 시계열로 시각화
+    function SymptomTrendsCard() {
+      const records = loadData(DAILYRECORD_STORAGE_KEY, []);
+
+      // 최근 30일 분 정렬
+      const sorted = useMemo(() => {
+        return [...records]
+          .filter((r) => r && r.date)
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .slice(-30);
+      }, [records]);
+
+      // X축 라벨: MM/DD
+      function fmt(d) { return d.slice(5).replace('-', '/'); }
+
+      const painData = useMemo(
+        () => sorted
+          .filter((r) => Number((r.sideEffects || {}).pain) > 0)
+          .map((r) => ({ date: fmt(r.date), pain: Number(r.sideEffects.pain) })),
+        [sorted]
+      );
+
+      const feverData = useMemo(
+        () => sorted
+          .filter((r) => r.fever !== null && r.fever !== undefined && Number(r.fever) > 0)
+          .map((r) => ({ date: fmt(r.date), fever: Number(r.fever) })),
+        [sorted]
+      );
+
+      const vomitData = useMemo(
+        () => sorted
+          .filter((r) => Number(r.vomitCount) > 0)
+          .map((r) => ({ date: fmt(r.date), count: Number(r.vomitCount) })),
+        [sorted]
+      );
+
+      if (painData.length === 0 && feverData.length === 0 && vomitData.length === 0) {
+        return null;
+      }
+
+      return (
+        <Card title="📊 증상 추이 (최근 30일)">
+          {/* 통증 NRS */}
+          {painData.length > 0 && (
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-sm font-bold text-textmain">😖 통증 NRS</div>
+                <span className="text-[11px] text-textsub">
+                  최고 {Math.max(...painData.map((d) => d.pain))} / 평균{' '}
+                  {(painData.reduce((a, b) => a + b.pain, 0) / painData.length).toFixed(1)}
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
+                <LineChart data={painData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                  <YAxis
+                    domain={[0, 10]}
+                    ticks={[0, 2, 4, 6, 8, 10]}
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    width={28}
+                  />
+                  <Tooltip formatter={(v) => `NRS ${v}`} />
+                  <ReferenceLine y={4} stroke="#F59E0B" strokeDasharray="4 4" label={{ value: '중등도 4', position: 'right', fontSize: 9, fill: '#F59E0B' }} />
+                  <ReferenceLine y={7} stroke="#EF4444" strokeDasharray="4 4" label={{ value: '심함 7', position: 'right', fontSize: 9, fill: '#EF4444' }} />
+                  <Line
+                    type="monotone"
+                    dataKey="pain"
+                    name="통증"
+                    stroke="#E91E8C"
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: '#E91E8C' }}
+                    activeDot={{ r: 6 }}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 체온 */}
+          {feverData.length > 0 && (
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-sm font-bold text-textmain">🌡️ 체온</div>
+                <span className="text-[11px] text-textsub">
+                  최고 {Math.max(...feverData.map((d) => d.fever)).toFixed(1)}°C
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
+                <LineChart data={feverData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                  <YAxis
+                    domain={[35, 'dataMax + 0.5']}
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    width={32}
+                    tickFormatter={(v) => `${v}°`}
+                  />
+                  <Tooltip formatter={(v) => `${Number(v).toFixed(1)}°C`} />
+                  <ReferenceLine y={38} stroke="#EF4444" strokeDasharray="4 4" label={{ value: '발열 38°', position: 'right', fontSize: 9, fill: '#EF4444' }} />
+                  <Line
+                    type="monotone"
+                    dataKey="fever"
+                    name="체온"
+                    stroke="#EF4444"
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: '#EF4444' }}
+                    activeDot={{ r: 6 }}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 구토 빈도 */}
+          {vomitData.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-sm font-bold text-textmain">🤮 구토 빈도</div>
+                <span className="text-[11px] text-textsub">
+                  총 {vomitData.reduce((a, b) => a + b.count, 0)}회 / {vomitData.length}일
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
+                <BarChart data={vomitData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    width={28}
+                  />
+                  <Tooltip formatter={(v) => `${v}회`} />
+                  <Bar
+                    dataKey="count"
+                    name="구토 횟수"
+                    fill="#10B981"
+                    radius={[6, 6, 0, 0]}
+                    isAnimationActive={false}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div className="text-[11px] text-textsub mt-3 leading-relaxed">
+            ※ 캘린더 날짜를 탭해서 그날 기록을 추가하면 차트가 자동으로 업데이트돼요.
+          </div>
+        </Card>
+      );
+    }
+
+    function BodyTab() {
+      const [vitals, setVitals] = useState(() => loadData('igt_vitals', []));
+      const [profile, setProfile] = useState(() => loadData('igt_profile', {}));
+      const [height, setHeight] = useState(profile.height ? String(profile.height) : '');
+      const [weight, setWeight] = useState('');
+      const [showResult, setShowResult] = useState(false);
+      const [savedMsg, setSavedMsg] = useState('');
+      const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+      useEffect(() => {
+        saveData('igt_vitals', vitals);
+      }, [vitals]);
+
+      const heightNum = Number(height) || 0;
+      const weightNum = Number(weight) || 0;
+      const valid = heightNum > 0 && weightNum > 0;
+      const bsa = valid ? Number(Math.sqrt((heightNum * weightNum) / 3600).toFixed(2)) : null;
+      const bmi = valid ? Number((weightNum / Math.pow(heightNum / 100, 2)).toFixed(1)) : null;
+      const cat = bmiCategory(bmi);
+
+      function showMsg(m, ms = 3500) {
+        setSavedMsg(m);
+        setTimeout(() => setSavedMsg(''), ms);
+      }
+
+      function handleCalc() {
+        if (!valid) return;
+        setShowResult(true);
+        // 키는 즉시 프로필에 반영 (다음 진입에서 자동 로드)
+        if (heightNum !== Number(profile.height)) {
+          const next = { ...profile, height: heightNum };
+          saveData('igt_profile', next);
+          setProfile(next);
+        }
+      }
+
+      function handleSave() {
+        if (!valid) return;
+        if (heightNum !== Number(profile.height)) {
+          const next = { ...profile, height: heightNum };
+          saveData('igt_profile', next);
+          setProfile(next);
+        }
+        const today = todayKey();
+        const entry = {
+          id: generateId(),
+          date: today,
+          weight: weightNum,
+          bsa,
+          bmi,
+        };
+        setVitals((prev) => {
+          const without = prev.filter((v) => v.date !== today);
+          return [entry, ...without];
+        });
+        setWeight('');
+        setShowResult(false);
+        showMsg(`✅ ${today} 측정 저장됨 · BSA ${bsa} m² · BMI ${bmi}`);
+      }
+
+      function handleDelete() {
+        setVitals((prev) => prev.filter((v) => v.id !== confirmDeleteId));
+        setConfirmDeleteId(null);
+      }
+
+      // 체중 추이용 (최근 10회, 날짜 오름차순)
+      const chartData = useMemo(() => {
+        return [...vitals]
+          .filter((v) => v.date && Number(v.weight) > 0)
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .slice(-10)
+          .map((v) => ({
+            date: v.date.slice(5).replace('-', '/'), // MM/DD
+            weight: Number(v.weight),
+            bsa: Number(v.bsa) || null,
+          }));
+      }, [vitals]);
+
+      const change = useMemo(() => {
+        if (chartData.length < 2) return null;
+        const last = chartData[chartData.length - 1].weight;
+        const prev = chartData[chartData.length - 2].weight;
+        const diff = last - prev;
+        if (Math.abs(diff) < 0.05) return { direction: 'same', diff: '0.0' };
+        return {
+          direction: diff > 0 ? 'up' : 'down',
+          diff: Math.abs(diff).toFixed(1),
+        };
+      }, [chartData]);
+
+      const sortedVitals = useMemo(
+        () => [...vitals].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+        [vitals]
+      );
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          {/* 3-1. 신체 계측 */}
+          <Card title="🏥 신체 계측">
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs text-textsub mb-1">키 (cm)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="50"
+                  max="250"
+                  value={height}
+                  onChange={(e) => setHeight(e.target.value)}
+                  placeholder="170"
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-textsub mb-1">체중 (kg)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="20"
+                  max="200"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  placeholder="65"
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mb-3">
+              <GhostButton onClick={handleCalc}>🧮 BSA 계산</GhostButton>
+            </div>
+
+            {showResult && bsa !== null && (
+              <div className="rounded-xl border-2 border-primary/30 bg-yellow-50 p-3 mb-3">
+                <div className="text-[11px] text-textsub mb-1">
+                  Mosteller: √(키 × 체중 / 3600)
+                </div>
+                <div className="text-2xl font-extrabold text-primary leading-none">
+                  BSA {bsa} <span className="text-base">m²</span>
+                </div>
+                {bmi !== null && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className="text-sm text-textmain">
+                      BMI <b>{bmi}</b>
+                    </div>
+                    {cat && (
+                      <span
+                        className={`text-xs rounded-full px-2 py-0.5 font-semibold border ${cat.cls}`}
+                      >
+                        {cat.label}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <PrimaryButton onClick={handleSave} disabled={!valid}>
+                오늘 측정 저장
+              </PrimaryButton>
+            </div>
+
+            {savedMsg && (
+              <div className="mt-3 text-xs text-textmain bg-primary/5 border border-primary/15 rounded-lg px-3 py-2">
+                {savedMsg}
+              </div>
+            )}
+
+            {profile.height && (
+              <div className="mt-3 text-[11px] text-textsub">
+                💡 마지막 등록 키: {profile.height}cm — 위 입력란에 자동 로드됩니다.
+              </div>
+            )}
+          </Card>
+
+          {/* 3-2. 체중 추이 */}
+          <Card title={`📈 체중 추이${chartData.length >= 2 ? ` (최근 ${chartData.length}회)` : ''}`}>
+            {chartData.length < 2 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                {chartData.length === 1
+                  ? '측정을 한 번 더 저장하면 추이 차트가 표시돼요.'
+                  : '체중 측정을 저장하면 추이가 기록됩니다.'}
+              </div>
+            ) : (
+              <>
+                {change && (
+                  <div className="flex justify-end mb-2">
+                    <span
+                      className={`text-xs rounded-full px-2.5 py-1 font-semibold ${
+                        change.direction === 'down'
+                          ? 'bg-blue-100 text-blue-700'
+                          : change.direction === 'up'
+                          ? 'bg-orange-100 text-orange-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      지난 측정 대비{' '}
+                      {change.direction === 'down'
+                        ? `−${change.diff}kg ▼`
+                        : change.direction === 'up'
+                        ? `+${change.diff}kg ▲`
+                        : '변화 없음 ─'}
+                    </span>
+                  </div>
+                )}
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                    <YAxis
+                      yAxisId="weight"
+                      tick={{ fontSize: 11, fill: '#E91E8C' }}
+                      domain={['dataMin - 1', 'dataMax + 1']}
+                      width={36}
+                    />
+                    <YAxis
+                      yAxisId="bsa"
+                      orientation="right"
+                      tick={{ fontSize: 11, fill: '#6C63FF' }}
+                      domain={['dataMin - 0.1', 'dataMax + 0.1']}
+                      width={36}
+                    />
+                    <Tooltip
+                      formatter={(v, name) => {
+                        if (name === '체중') return `${v} kg`;
+                        if (name === 'BSA') return `${v} m²`;
+                        return v;
+                      }}
+                    />
+                    <Line
+                      yAxisId="weight"
+                      type="monotone"
+                      dataKey="weight"
+                      name="체중"
+                      stroke="#E91E8C"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: '#E91E8C' }}
+                      activeDot={{ r: 6 }}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      yAxisId="bsa"
+                      type="monotone"
+                      dataKey="bsa"
+                      name="BSA"
+                      stroke="#6C63FF"
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      dot={{ r: 3, fill: '#6C63FF' }}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+                <div className="flex gap-4 justify-center mt-1 text-[11px] text-textsub">
+                  <span>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-primary mr-1" />
+                    체중 (kg)
+                  </span>
+                  <span>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-secondary mr-1" />
+                    BSA (m²)
+                  </span>
+                </div>
+              </>
+            )}
+          </Card>
+
+          {/* 증상 추이 차트 (통증/체온/구토) */}
+          <SymptomTrendsCard />
+
+          {/* 측정 기록 리스트 */}
+          <Card title="📋 측정 기록">
+            {sortedVitals.length === 0 ? (
+              <div className="py-3 text-center text-sm text-textsub">
+                아직 저장된 기록이 없어요.
+              </div>
+            ) : (
+              <ul className="divide-y divide-primary/10">
+                {sortedVitals.map((v) => {
+                  const c = bmiCategory(Number(v.bmi));
+                  return (
+                    <li key={v.id} className="py-3 flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-textsub mb-0.5">{v.date}</div>
+                        <div className="text-sm text-textmain">
+                          체중 <b>{v.weight}</b>kg · BSA <b>{v.bsa}</b> m² · BMI <b>{v.bmi}</b>
+                          {c && (
+                            <span className={`ml-2 text-[10px] rounded-full px-2 py-0.5 font-semibold border ${c.cls}`}>
+                              {c.label}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setConfirmDeleteId(v.id)}
+                        aria-label="삭제"
+                        className="text-base no-select active:opacity-70 flex items-center justify-center rounded-full"
+                        style={{ minHeight: 36, minWidth: 36 }}
+                      >
+                        🗑️
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <ConfirmDialog
+            open={!!confirmDeleteId}
+            title="측정 기록을 삭제할까요?"
+            message="복구할 수 없어요."
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmDeleteId(null)}
           />
         </div>
       );
@@ -3117,7 +4533,7 @@
             >
               {tab === 'home'      && <HomeTab onNavigate={setTab} />}
               {tab === 'treatment' && <TreatmentTab />}
-              {tab === 'body'      && <Placeholder label="몸 상태" />}
+              {tab === 'body'      && <BodyTab />}
               {tab === 'diary'     && <DiaryTab />}
               {tab === 'expense'   && <ExpenseTab />}
             </main>

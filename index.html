@@ -126,7 +126,8 @@
     const { useState, useEffect, useMemo, useRef, useCallback } = React;
     const {
       LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-      XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+      XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+      ReferenceLine,
     } = Recharts;
 
     // ========== localStorage 키 ==========
@@ -3793,6 +3794,161 @@
       return { label: '비만', cls: 'bg-red-100 text-red-700 border-red-200' };
     }
 
+    // ========== 증상 추이 차트 ==========
+    // igt_dailyrecord에서 통증 NRS / 체온 / 구토 횟수를 시계열로 시각화
+    function SymptomTrendsCard() {
+      const records = loadData(DAILYRECORD_STORAGE_KEY, []);
+
+      // 최근 30일 분 정렬
+      const sorted = useMemo(() => {
+        return [...records]
+          .filter((r) => r && r.date)
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .slice(-30);
+      }, [records]);
+
+      // X축 라벨: MM/DD
+      function fmt(d) { return d.slice(5).replace('-', '/'); }
+
+      const painData = useMemo(
+        () => sorted
+          .filter((r) => Number((r.sideEffects || {}).pain) > 0)
+          .map((r) => ({ date: fmt(r.date), pain: Number(r.sideEffects.pain) })),
+        [sorted]
+      );
+
+      const feverData = useMemo(
+        () => sorted
+          .filter((r) => r.fever !== null && r.fever !== undefined && Number(r.fever) > 0)
+          .map((r) => ({ date: fmt(r.date), fever: Number(r.fever) })),
+        [sorted]
+      );
+
+      const vomitData = useMemo(
+        () => sorted
+          .filter((r) => Number(r.vomitCount) > 0)
+          .map((r) => ({ date: fmt(r.date), count: Number(r.vomitCount) })),
+        [sorted]
+      );
+
+      if (painData.length === 0 && feverData.length === 0 && vomitData.length === 0) {
+        return null;
+      }
+
+      return (
+        <Card title="📊 증상 추이 (최근 30일)">
+          {/* 통증 NRS */}
+          {painData.length > 0 && (
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-sm font-bold text-textmain">😖 통증 NRS</div>
+                <span className="text-[11px] text-textsub">
+                  최고 {Math.max(...painData.map((d) => d.pain))} / 평균{' '}
+                  {(painData.reduce((a, b) => a + b.pain, 0) / painData.length).toFixed(1)}
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
+                <LineChart data={painData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                  <YAxis
+                    domain={[0, 10]}
+                    ticks={[0, 2, 4, 6, 8, 10]}
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    width={28}
+                  />
+                  <Tooltip formatter={(v) => `NRS ${v}`} />
+                  <ReferenceLine y={4} stroke="#F59E0B" strokeDasharray="4 4" label={{ value: '중등도 4', position: 'right', fontSize: 9, fill: '#F59E0B' }} />
+                  <ReferenceLine y={7} stroke="#EF4444" strokeDasharray="4 4" label={{ value: '심함 7', position: 'right', fontSize: 9, fill: '#EF4444' }} />
+                  <Line
+                    type="monotone"
+                    dataKey="pain"
+                    name="통증"
+                    stroke="#E91E8C"
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: '#E91E8C' }}
+                    activeDot={{ r: 6 }}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 체온 */}
+          {feverData.length > 0 && (
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-sm font-bold text-textmain">🌡️ 체온</div>
+                <span className="text-[11px] text-textsub">
+                  최고 {Math.max(...feverData.map((d) => d.fever)).toFixed(1)}°C
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
+                <LineChart data={feverData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                  <YAxis
+                    domain={[35, 'dataMax + 0.5']}
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    width={32}
+                    tickFormatter={(v) => `${v}°`}
+                  />
+                  <Tooltip formatter={(v) => `${Number(v).toFixed(1)}°C`} />
+                  <ReferenceLine y={38} stroke="#EF4444" strokeDasharray="4 4" label={{ value: '발열 38°', position: 'right', fontSize: 9, fill: '#EF4444' }} />
+                  <Line
+                    type="monotone"
+                    dataKey="fever"
+                    name="체온"
+                    stroke="#EF4444"
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: '#EF4444' }}
+                    activeDot={{ r: 6 }}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 구토 빈도 */}
+          {vomitData.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-sm font-bold text-textmain">🤮 구토 빈도</div>
+                <span className="text-[11px] text-textsub">
+                  총 {vomitData.reduce((a, b) => a + b.count, 0)}회 / {vomitData.length}일
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
+                <BarChart data={vomitData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    width={28}
+                  />
+                  <Tooltip formatter={(v) => `${v}회`} />
+                  <Bar
+                    dataKey="count"
+                    name="구토 횟수"
+                    fill="#10B981"
+                    radius={[6, 6, 0, 0]}
+                    isAnimationActive={false}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div className="text-[11px] text-textsub mt-3 leading-relaxed">
+            ※ 캘린더 날짜를 탭해서 그날 기록을 추가하면 차트가 자동으로 업데이트돼요.
+          </div>
+        </Card>
+      );
+    }
+
     function BodyTab() {
       const [vitals, setVitals] = useState(() => loadData('igt_vitals', []));
       const [profile, setProfile] = useState(() => loadData('igt_profile', {}));
@@ -4065,6 +4221,9 @@
               </>
             )}
           </Card>
+
+          {/* 증상 추이 차트 (통증/체온/구토) */}
+          <SymptomTrendsCard />
 
           {/* 측정 기록 리스트 */}
           <Card title="📋 측정 기록">

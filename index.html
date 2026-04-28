@@ -2077,6 +2077,38 @@
       return applyBackupPayload(payload);
     }
 
+    // 복원 직후 / 필요 시 호출. localStorage에서 직접 읽어 enabled=true 항목을 모두 재예약.
+    // scheduleXXX 헬퍼들이 cancel-then-schedule 이라 idempotent (중복 알림 안 생김).
+    async function rescheduleAllReminders() {
+      if (!isNativeApp || !LocalNotifications) return { ok: false, reason: 'not-native' };
+      const granted = await ensureNotificationPermission();
+      if (!granted) return { ok: false, reason: 'permission-denied' };
+
+      let medCount = 0;
+      let cycleCount = 0;
+
+      // 약 복용 알림
+      const meds = loadData(MED_REMINDER_KEY, []);
+      for (const r of meds) {
+        if (r && r.enabled) {
+          const res = await scheduleMedReminder(r);
+          if (res.ok) medCount += res.count;
+        }
+      }
+
+      // 사이클 알림 (사용자가 토글 켜뒀을 때만)
+      const cycleEnabled = loadData('igt_notify_cycle', false);
+      if (cycleEnabled) {
+        const schedules = loadData(SCHEDULE_STORAGE_KEY, []);
+        for (const s of schedules) {
+          const res = await scheduleCycleReminder(s);
+          if (res.ok) cycleCount += res.count;
+        }
+      }
+
+      return { ok: true, medCount, cycleCount };
+    }
+
     function BackupCard() {
       const [busy, setBusy] = useState(false);
       const [msg, setMsg] = useState('');
@@ -2108,7 +2140,21 @@
         try {
           const text = await file.text();
           const restored = importBackupFromText(text);
-          showMsg(`✅ ${restored}개 항목 복원됨. 잠시 후 새로고침합니다.`);
+          let extra = '';
+          if (isNativeApp) {
+            try {
+              const r = await rescheduleAllReminders();
+              if (r.ok) {
+                const total = (r.medCount || 0) + (r.cycleCount || 0);
+                if (total > 0) extra = ` · 알림 ${total}건 자동 재예약`;
+              } else if (r.reason === 'permission-denied') {
+                extra = ' (알림 권한 거부 → 재예약 안 됨)';
+              }
+            } catch (e) {
+              console.warn('reschedule after import failed', e);
+            }
+          }
+          showMsg(`✅ ${restored}개 항목 복원${extra}. 잠시 후 새로고침합니다.`);
           setConfirmReload(true);
         } catch (e) {
           showMsg(`❌ 복원 실패: ${e.message || e}`);

@@ -3397,6 +3397,342 @@
     }
 
     // ========== 탭 placeholder ==========
+    // ========== 탭 3: 몸 상태 ==========
+    // 키 → igt_profile.height (1회 등록 후 자동 로드, 수정 가능)
+    // 체중 측정 → igt_vitals 에 누적 (date, weight, bsa, bmi)
+    // BSA: Mosteller 공식  √(키 × 체중 / 3600)
+    // BMI: 체중 / (키[m])²
+    function bmiCategory(bmi) {
+      if (bmi == null || isNaN(bmi)) return null;
+      if (bmi < 18.5) return { label: '저체중', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
+      if (bmi < 25)   return { label: '정상',   cls: 'bg-green-100 text-green-700 border-green-200' };
+      if (bmi < 30)   return { label: '과체중', cls: 'bg-yellow-100 text-yellow-800 border-yellow-300' };
+      return { label: '비만', cls: 'bg-red-100 text-red-700 border-red-200' };
+    }
+
+    function BodyTab() {
+      const [vitals, setVitals] = useState(() => loadData('igt_vitals', []));
+      const [profile, setProfile] = useState(() => loadData('igt_profile', {}));
+      const [height, setHeight] = useState(profile.height ? String(profile.height) : '');
+      const [weight, setWeight] = useState('');
+      const [showResult, setShowResult] = useState(false);
+      const [savedMsg, setSavedMsg] = useState('');
+      const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+      useEffect(() => {
+        saveData('igt_vitals', vitals);
+      }, [vitals]);
+
+      const heightNum = Number(height) || 0;
+      const weightNum = Number(weight) || 0;
+      const valid = heightNum > 0 && weightNum > 0;
+      const bsa = valid ? Number(Math.sqrt((heightNum * weightNum) / 3600).toFixed(2)) : null;
+      const bmi = valid ? Number((weightNum / Math.pow(heightNum / 100, 2)).toFixed(1)) : null;
+      const cat = bmiCategory(bmi);
+
+      function showMsg(m, ms = 3500) {
+        setSavedMsg(m);
+        setTimeout(() => setSavedMsg(''), ms);
+      }
+
+      function handleCalc() {
+        if (!valid) return;
+        setShowResult(true);
+        // 키는 즉시 프로필에 반영 (다음 진입에서 자동 로드)
+        if (heightNum !== Number(profile.height)) {
+          const next = { ...profile, height: heightNum };
+          saveData('igt_profile', next);
+          setProfile(next);
+        }
+      }
+
+      function handleSave() {
+        if (!valid) return;
+        if (heightNum !== Number(profile.height)) {
+          const next = { ...profile, height: heightNum };
+          saveData('igt_profile', next);
+          setProfile(next);
+        }
+        const today = todayKey();
+        const entry = {
+          id: generateId(),
+          date: today,
+          weight: weightNum,
+          bsa,
+          bmi,
+        };
+        setVitals((prev) => {
+          const without = prev.filter((v) => v.date !== today);
+          return [entry, ...without];
+        });
+        setWeight('');
+        setShowResult(false);
+        showMsg(`✅ ${today} 측정 저장됨 · BSA ${bsa} m² · BMI ${bmi}`);
+      }
+
+      function handleDelete() {
+        setVitals((prev) => prev.filter((v) => v.id !== confirmDeleteId));
+        setConfirmDeleteId(null);
+      }
+
+      // 체중 추이용 (최근 10회, 날짜 오름차순)
+      const chartData = useMemo(() => {
+        return [...vitals]
+          .filter((v) => v.date && Number(v.weight) > 0)
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .slice(-10)
+          .map((v) => ({
+            date: v.date.slice(5).replace('-', '/'), // MM/DD
+            weight: Number(v.weight),
+            bsa: Number(v.bsa) || null,
+          }));
+      }, [vitals]);
+
+      const change = useMemo(() => {
+        if (chartData.length < 2) return null;
+        const last = chartData[chartData.length - 1].weight;
+        const prev = chartData[chartData.length - 2].weight;
+        const diff = last - prev;
+        if (Math.abs(diff) < 0.05) return { direction: 'same', diff: '0.0' };
+        return {
+          direction: diff > 0 ? 'up' : 'down',
+          diff: Math.abs(diff).toFixed(1),
+        };
+      }, [chartData]);
+
+      const sortedVitals = useMemo(
+        () => [...vitals].sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+        [vitals]
+      );
+
+      return (
+        <div className="px-4 pb-6 space-y-4">
+          {/* 3-1. 신체 계측 */}
+          <Card title="🏥 신체 계측">
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-xs text-textsub mb-1">키 (cm)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="50"
+                  max="250"
+                  value={height}
+                  onChange={(e) => setHeight(e.target.value)}
+                  placeholder="170"
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-textsub mb-1">체중 (kg)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="20"
+                  max="200"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  placeholder="65"
+                  className="w-full rounded-xl border border-primary/20 bg-softbg px-3 py-3 text-textmain placeholder:text-textsub/70"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mb-3">
+              <GhostButton onClick={handleCalc}>🧮 BSA 계산</GhostButton>
+            </div>
+
+            {showResult && bsa !== null && (
+              <div className="rounded-xl border-2 border-primary/30 bg-yellow-50 p-3 mb-3">
+                <div className="text-[11px] text-textsub mb-1">
+                  Mosteller: √(키 × 체중 / 3600)
+                </div>
+                <div className="text-2xl font-extrabold text-primary leading-none">
+                  BSA {bsa} <span className="text-base">m²</span>
+                </div>
+                {bmi !== null && (
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className="text-sm text-textmain">
+                      BMI <b>{bmi}</b>
+                    </div>
+                    {cat && (
+                      <span
+                        className={`text-xs rounded-full px-2 py-0.5 font-semibold border ${cat.cls}`}
+                      >
+                        {cat.label}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <PrimaryButton onClick={handleSave} disabled={!valid}>
+                오늘 측정 저장
+              </PrimaryButton>
+            </div>
+
+            {savedMsg && (
+              <div className="mt-3 text-xs text-textmain bg-primary/5 border border-primary/15 rounded-lg px-3 py-2">
+                {savedMsg}
+              </div>
+            )}
+
+            {profile.height && (
+              <div className="mt-3 text-[11px] text-textsub">
+                💡 마지막 등록 키: {profile.height}cm — 위 입력란에 자동 로드됩니다.
+              </div>
+            )}
+          </Card>
+
+          {/* 3-2. 체중 추이 */}
+          <Card title={`📈 체중 추이${chartData.length >= 2 ? ` (최근 ${chartData.length}회)` : ''}`}>
+            {chartData.length < 2 ? (
+              <div className="py-6 text-center text-sm text-textsub">
+                {chartData.length === 1
+                  ? '측정을 한 번 더 저장하면 추이 차트가 표시돼요.'
+                  : '체중 측정을 저장하면 추이가 기록됩니다.'}
+              </div>
+            ) : (
+              <>
+                {change && (
+                  <div className="flex justify-end mb-2">
+                    <span
+                      className={`text-xs rounded-full px-2.5 py-1 font-semibold ${
+                        change.direction === 'down'
+                          ? 'bg-blue-100 text-blue-700'
+                          : change.direction === 'up'
+                          ? 'bg-orange-100 text-orange-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      지난 측정 대비{' '}
+                      {change.direction === 'down'
+                        ? `−${change.diff}kg ▼`
+                        : change.direction === 'up'
+                        ? `+${change.diff}kg ▲`
+                        : '변화 없음 ─'}
+                    </span>
+                  </div>
+                )}
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0e4ee" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6B7280' }} />
+                    <YAxis
+                      yAxisId="weight"
+                      tick={{ fontSize: 11, fill: '#E91E8C' }}
+                      domain={['dataMin - 1', 'dataMax + 1']}
+                      width={36}
+                    />
+                    <YAxis
+                      yAxisId="bsa"
+                      orientation="right"
+                      tick={{ fontSize: 11, fill: '#6C63FF' }}
+                      domain={['dataMin - 0.1', 'dataMax + 0.1']}
+                      width={36}
+                    />
+                    <Tooltip
+                      formatter={(v, name) => {
+                        if (name === '체중') return `${v} kg`;
+                        if (name === 'BSA') return `${v} m²`;
+                        return v;
+                      }}
+                    />
+                    <Line
+                      yAxisId="weight"
+                      type="monotone"
+                      dataKey="weight"
+                      name="체중"
+                      stroke="#E91E8C"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: '#E91E8C' }}
+                      activeDot={{ r: 6 }}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      yAxisId="bsa"
+                      type="monotone"
+                      dataKey="bsa"
+                      name="BSA"
+                      stroke="#6C63FF"
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      dot={{ r: 3, fill: '#6C63FF' }}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+                <div className="flex gap-4 justify-center mt-1 text-[11px] text-textsub">
+                  <span>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-primary mr-1" />
+                    체중 (kg)
+                  </span>
+                  <span>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-secondary mr-1" />
+                    BSA (m²)
+                  </span>
+                </div>
+              </>
+            )}
+          </Card>
+
+          {/* 측정 기록 리스트 */}
+          <Card title="📋 측정 기록">
+            {sortedVitals.length === 0 ? (
+              <div className="py-3 text-center text-sm text-textsub">
+                아직 저장된 기록이 없어요.
+              </div>
+            ) : (
+              <ul className="divide-y divide-primary/10">
+                {sortedVitals.map((v) => {
+                  const c = bmiCategory(Number(v.bmi));
+                  return (
+                    <li key={v.id} className="py-3 flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-textsub mb-0.5">{v.date}</div>
+                        <div className="text-sm text-textmain">
+                          체중 <b>{v.weight}</b>kg · BSA <b>{v.bsa}</b> m² · BMI <b>{v.bmi}</b>
+                          {c && (
+                            <span className={`ml-2 text-[10px] rounded-full px-2 py-0.5 font-semibold border ${c.cls}`}>
+                              {c.label}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setConfirmDeleteId(v.id)}
+                        aria-label="삭제"
+                        className="text-base no-select active:opacity-70 flex items-center justify-center rounded-full"
+                        style={{ minHeight: 36, minWidth: 36 }}
+                      >
+                        🗑️
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <ConfirmDialog
+            open={!!confirmDeleteId}
+            title="측정 기록을 삭제할까요?"
+            message="복구할 수 없어요."
+            onConfirm={handleDelete}
+            onCancel={() => setConfirmDeleteId(null)}
+          />
+        </div>
+      );
+    }
+
+    // ========== 탭 placeholder ==========
     function Placeholder({ label }) {
       return (
         <div className="px-4 pb-6">
@@ -3438,7 +3774,7 @@
             >
               {tab === 'home'      && <HomeTab onNavigate={setTab} />}
               {tab === 'treatment' && <TreatmentTab />}
-              {tab === 'body'      && <Placeholder label="몸 상태" />}
+              {tab === 'body'      && <BodyTab />}
               {tab === 'diary'     && <DiaryTab />}
               {tab === 'expense'   && <ExpenseTab />}
             </main>
